@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+tb_log/
+.DS_Store
+
+# Ignore intermediate checkpoints to save space, but keep final models
+models/*_steps.zip

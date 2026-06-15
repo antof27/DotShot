@@ -1,0 +1,6 @@
+gymnasium>=0.29.1
+pygame>=2.5.2
+numpy>=1.24.0
+stable-baselines3[extra]>=2.2.1
+google-generativeai>=0.3.0
+optuna>=3.0.0
