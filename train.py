@@ -1,10 +1,14 @@
 import os
 import json
 import argparse
+import torch
 import gymnasium as gym
 from stable_baselines3 import SAC, PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 import env  # Registers ElementShooter-v0 and ElementShooter-Discrete-v0
+
+# Optimize PyTorch CPU performance by limiting thread count (prevents core thrashing)
+torch.set_num_threads(1)
 
 def load_best_hyperparams(algo="sac", json_path=None):
     if json_path is None:
@@ -24,19 +28,32 @@ def main():
     parser.add_argument("--save-dir", type=str, default="./models", help="Model saving directory")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint model (.zip) to resume training from")
     parser.add_argument("--curiosity", action="store_true", help="Enable Intrinsic Curiosity Module (ICM) exploration rewards")
+    parser.add_argument("--num-envs", type=int, default=None, help="Number of parallel environments to run (default: 8 for PPO, 1 for SAC)")
     args = parser.parse_args()
     
+    # Set default num_envs based on algorithm
+    if args.num_envs is None:
+        args.num_envs = 8 if args.algo == "ppo" else 1
+        
     # 1. Setup folders
     os.makedirs(args.save_dir, exist_ok=True)
     
     # 2. Create environment
-    print(f"Initializing environment for {args.algo.upper()}...")
+    from stable_baselines3.common.env_util import make_vec_env
+    print(f"Initializing {args.num_envs} parallel environments for {args.algo.upper()}...")
     env_id = "ElementShooter-Discrete-v0" if args.algo == "ppo" else "ElementShooter-v0"
-    game_env = gym.make(env_id)
+    
     if args.curiosity:
         from env.curiosity import CuriosityWrapper
-        print("Wrapping environment with Intrinsic Curiosity Module (ICM)...")
-        game_env = CuriosityWrapper(game_env, eta=0.1)
+        print("Wrapping environments with Intrinsic Curiosity Module (ICM)...")
+        game_env = make_vec_env(
+            env_id, 
+            n_envs=args.num_envs,
+            wrapper_class=CuriosityWrapper,
+            wrapper_kwargs={"eta": 0.1}
+        )
+    else:
+        game_env = make_vec_env(env_id, n_envs=args.num_envs)
         
     # 3. Load checkpoint or initialize new model
     AlgoClass = PPO if args.algo == "ppo" else SAC
@@ -126,6 +143,8 @@ def main():
             # PPO specific hyperparameters
             n_steps = tuned_params.get("n_steps", 2048)  # Steps to run per update
             ent_coef = tuned_params.get("ent_coef", 0.01) # Entropy coefficient for discrete exploration
+            gae_lambda = tuned_params.get("gae_lambda", 0.95)
+            clip_range = tuned_params.get("clip_range", 0.2)
             
             print("\n--- PPO Training Hyperparameters ---")
             print(f"Learning Rate:    {learning_rate:.2e}")
@@ -133,6 +152,8 @@ def main():
             print(f"N Steps:          {n_steps}")
             print(f"Batch Size:       {batch_size}")
             print(f"Entropy Coef:     {ent_coef}")
+            print(f"GAE Lambda:       {gae_lambda}")
+            print(f"Clip Range:       {clip_range}")
             print(f"Network Width:    {net_arch_width}")
             print("------------------------------------\n")
             
@@ -144,6 +165,8 @@ def main():
                 n_steps=n_steps,
                 batch_size=batch_size,
                 ent_coef=ent_coef,
+                gae_lambda=gae_lambda,
+                clip_range=clip_range,
                 policy_kwargs=policy_kwargs,
                 tensorboard_log=args.tb_log,
                 verbose=1

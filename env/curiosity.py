@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 class IntrinsicCuriosityModule(nn.Module):
-    def __init__(self, obs_dim=55, action_dim=8, latent_dim=64):
+    def __init__(self, obs_dim=55, action_dim=6, latent_dim=64):
         super(IntrinsicCuriosityModule, self).__init__()
         
         # 1. Feature Encoder: φ(s) -> maps high-dim state to low-dim features
@@ -84,7 +84,16 @@ class CuriosityWrapper(gym.Wrapper):
             # Convert to PyTorch tensors
             s_t = torch.FloatTensor(self.last_obs).unsqueeze(0).to(self.device)
             s_t1 = torch.FloatTensor(next_obs).unsqueeze(0).to(self.device)
-            a_t = torch.FloatTensor(action).unsqueeze(0).to(self.device)
+            
+            # Normalize action if discrete
+            if isinstance(self.env.action_space, gym.spaces.MultiDiscrete):
+                n_vec = self.env.action_space.nvec
+                action_np = np.array(action, dtype=np.float32)
+                normalized_action = 2.0 * action_np / (n_vec - 1) - 1.0
+            else:
+                normalized_action = action
+                
+            a_t = torch.FloatTensor(normalized_action).unsqueeze(0).to(self.device)
             
             # Forward pass through ICM
             phi_next_state, pred_phi_next_state, pred_action = self.icm(s_t, s_t1, a_t)

@@ -71,16 +71,18 @@ def play_manual():
                 
             # Check mouse click for shooting
             click = pygame.mouse.get_pressed()
-            shoot_triggers = [0.0] * 4
-            if click[0] or keys[pygame.K_SPACE]:  # Left click or Space
-                shoot_triggers[selected_weapon] = 1.0
+            shoot_trigger = 1.0 if (click[0] or keys[pygame.K_SPACE]) else -1.0
+            
+            # Map selected_weapon (0, 1, 2, 3) to weapon_select in [-1, 1]
+            weapon_select = -0.75 + selected_weapon * 0.5
                 
-            # Construct Action Array
-            # action: [move_x, move_y, aim_x, aim_y, shoot_w0, shoot_w1, shoot_w2, shoot_w3]
+            # Construct Action Array for continuous environment (size 6)
+            # action: [move_x, move_y, aim_x, aim_y, shoot_trigger, weapon_select]
             action = np.array([
                 move_x, move_y,
                 aim_x, aim_y,
-                shoot_triggers[0], shoot_triggers[1], shoot_triggers[2], shoot_triggers[3]
+                shoot_trigger,
+                weapon_select
             ], dtype=np.float32)
             
             # 2. Step the simulator

@@ -118,15 +118,19 @@ def main():
                 print(f"Thought: {reasoning}")
                 print(f"Action: Move({move_x:.2f}, {move_y:.2f}) | Aim({aim_x:.2f}, {aim_y:.2f}) | Shoot: {shoot_weapon}\n")
                 
-                # Convert to Box action space of size 8
-                action = np.zeros(8, dtype=np.float32)
+                # Convert to Box action space of size 6
+                action = np.zeros(6, dtype=np.float32)
                 action[0] = move_x
                 action[1] = move_y
                 action[2] = aim_x
                 action[3] = aim_y
                 
                 if shoot_weapon >= 0 and shoot_weapon < 4:
-                    action[4 + shoot_weapon] = 1.0  # Trigger weapon
+                    action[4] = 1.0  # Shoot trigger
+                    action[5] = -0.75 + shoot_weapon * 0.5  # Weapon select
+                else:
+                    action[4] = -1.0  # Do not shoot
+                    action[5] = 0.0   # Neutral weapon select
             
             # 3. Apply action for multiple steps (Action Repeat)
             for _ in range(ACTION_REPEAT):

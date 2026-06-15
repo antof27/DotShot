@@ -55,17 +55,17 @@ class ElementShooterEnv(gym.Env):
             # Action space:
             # action[0]: movement dx (0: Left, 1: None, 2: Right)
             # action[1]: movement dy (0: Up, 1: None, 2: Down)
-            # action[2]: aim direction (0..15 -> 16 discrete angles)
+            # action[2]: aim direction (0..63 -> 64 discrete angles)
             # action[3]: weapon selection (0: None, 1: Water, 2: Grass, 3: Fire, 4: Wind)
-            self.action_space = spaces.MultiDiscrete([3, 3, 16, 5])
+            self.action_space = spaces.MultiDiscrete([3, 3, 64, 5])
         else:
             # Action space: 
             # action[0], action[1]: movement dx, dy in [-1, 1]
             # action[2], action[3]: aim ax, ay in [-1, 1] (defines shooting direction vector)
-            # action[4..7]: weapon shoot triggers (Water, Grass, Fire, Wind).
-            # We check the highest trigger > 0.2 to fire.
+            # action[4]: weapon shoot trigger (shoot if > 0.0)
+            # action[5]: weapon selection in [-1, 1] (mapped to 4 weapons: Water, Grass, Fire, Wind)
             self.action_space = spaces.Box(
-                low=-1.0, high=1.0, shape=(8,), dtype=np.float32
+                low=-1.0, high=1.0, shape=(6,), dtype=np.float32
             )
         
         # Observation space size:
@@ -300,8 +300,8 @@ class ElementShooterEnv(gym.Env):
                 move_x /= move_len
                 move_y /= move_len
                 
-            # action[2]: aim direction (0..15 -> 16 discrete angles)
-            aim_angle = float(action[2]) * (2.0 * np.pi / 16.0)
+            # action[2]: aim direction (0..63 -> 64 discrete angles)
+            aim_angle = float(action[2]) * (2.0 * np.pi / 64.0)
             aim_x = np.cos(aim_angle)
             aim_y = -np.sin(aim_angle) # y axis goes down
             
@@ -309,18 +309,20 @@ class ElementShooterEnv(gym.Env):
             fired_weapon_type = int(action[3]) - 1
             shoot_triggered = (fired_weapon_type >= 0)
         else:
-            # action is Box of size 8
+            # action is Box of size 6
             action = np.clip(action, -1.0, 1.0)
             move_x, move_y = action[0], action[1]
             aim_x, aim_y = action[2], action[3]
-            shoot_triggers = action[4:8]
+            shoot_trigger = action[4]
+            weapon_select = action[5]
             
             fired_weapon_type = -1
             shoot_triggered = False
-            max_trigger_idx = np.argmax(shoot_triggers)
-            if shoot_triggers[max_trigger_idx] > 0.2:
-                fired_weapon_type = max_trigger_idx
+            if shoot_trigger > 0.0:
                 shoot_triggered = True
+                w_val = (weapon_select + 1.0) / 2.0  # map to [0, 1]
+                fired_weapon_type = int(w_val * 4.0)
+                fired_weapon_type = np.clip(fired_weapon_type, 0, 3)
         
         self.steps_survived += 1
         
@@ -446,7 +448,7 @@ class ElementShooterEnv(gym.Env):
                             reward += dist_bonus
                     else:
                         # Ineffective hit — wrong weapon type
-                        reward -= 0.5
+                        reward -= 0.1
                     break  # Bullet hit this enemy, stop checking others
                     
         # Filter dead enemies
@@ -482,7 +484,7 @@ class ElementShooterEnv(gym.Env):
                         break
                 if not matching_enemy_exists:
                     # Fired wrong weapon type — no matching target on screen
-                    reward -= 1.5
+                    reward -= 0.1
                     
         # --- P_wall: Wall avoidance penalty (stronger) ---
         wall_margin = 100.0
@@ -505,7 +507,7 @@ class ElementShooterEnv(gym.Env):
                 dot_with_last = norm_ax * self.last_aim_x + norm_ay * self.last_aim_y
                 angular_change = 1.0 - dot_with_last  # 0 = no rotation, 2 = full 180° flip
                 if angular_change > 0.3:  # Threshold for "spinning"
-                    reward -= angular_change * 1.0  # Strong penalty proportional to spin speed
+                    reward -= angular_change * 0.05  # Reduced penalty (0.05 instead of 1.0) so as not to suppress exploration
                 self.last_aim_x = norm_ax
                 self.last_aim_y = norm_ay
 

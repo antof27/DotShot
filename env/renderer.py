@@ -201,8 +201,8 @@ class PygameRenderer:
                 health_ratio = enemy.health / enemy.max_health
                 bar_width = 30
                 bar_height = 4
-                bar_x = enemy.x - bar_width / 2
-                bar_y = enemy.y - enemy.radius - 8
+                bar_x = int(enemy.x - bar_width / 2)
+                bar_y = int(enemy.y - enemy.radius - 8)
                 # Background (red/dark)
                 pygame.draw.rect(self.screen, (40, 15, 15), (bar_x, bar_y, bar_width, bar_height), border_radius=2)
                 # Fill (green)
