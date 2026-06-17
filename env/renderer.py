@@ -79,7 +79,7 @@ class PygameRenderer:
                enemies, bullets, score, steps_survived,
                last_fired_weapon, shoot_cooldown, difficulty,
                aim_x, aim_y,
-               render_mode="human"):
+               render_mode="human", enemy_bullets=None):
                
         # Process Pygame event queue to avoid "Application not responding"
         for event in pygame.event.get():
@@ -88,7 +88,7 @@ class PygameRenderer:
                 exit()
                 
         # 1. Background Fill (Dark theme)
-        bg_color = (11, 14, 20)  # Deeper dark space theme
+        bg_color = (11, 14, 20)  
         self.screen.fill(bg_color)
         
         # Draw ambient starfield
@@ -141,6 +141,22 @@ class PygameRenderer:
                 })
             # Draw bullet with glow
             self.draw_glow_circle(self.screen, b.color, (int(b.x), int(b.y)), int(b.radius), glow_radius=6, alpha=150)
+            
+        # Draw Enemy Bullets
+        if enemy_bullets:
+            for eb in enemy_bullets:
+                if np.random.rand() < 0.3:
+                    self.particles.append({
+                        "x": eb.x - eb.dx * 8,
+                        "y": eb.y - eb.dy * 8,
+                        "vx": -eb.dx * np.random.uniform(0.3, 1.0),
+                        "vy": -eb.dy * np.random.uniform(0.3, 1.0),
+                        "color": (255, 140, 0),
+                        "life": 6,
+                        "max_life": 6,
+                        "size": 1.5
+                    })
+                self.draw_glow_circle(self.screen, (255, 140, 0), (int(eb.x), int(eb.y)), int(eb.radius), glow_radius=5, alpha=160)
             
         # 5. Draw Enemies
         for enemy in enemies:

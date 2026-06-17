@@ -5,7 +5,7 @@ import numpy as np
 import pygame
 import env  # Registers ElementShooter-v0
 
-def play_manual():
+def play_manual(env_id="ElementShooter-v0"):
     """Lets the user play the game manually using WASD and Mouse."""
     print("\n================ MANUAL PLAY MODE ================")
     print("Controls:")
@@ -16,7 +16,7 @@ def play_manual():
     print("==================================================\n")
     
     # Initialize environment
-    game_env = gym.make("ElementShooter-v0", render_mode="human")
+    game_env = gym.make(env_id, render_mode="human")
     obs, info = game_env.reset()
     
     selected_weapon = 0  # Default to Water
@@ -26,7 +26,6 @@ def play_manual():
     try:
         while running:
             # 1. Capture user keyboard/mouse input
-            # We must pump pygame events
             pygame.event.pump()
             
             # Check window exit
@@ -49,11 +48,10 @@ def play_manual():
             if keys[pygame.K_a] or keys[pygame.K_LEFT]:  move_x = -1.0
             if keys[pygame.K_d] or keys[pygame.K_RIGHT]: move_x = 1.0
             
-            # Normalize movement vector if diagonal
-            move_len = np.sqrt(move_x**2 + move_y**2)
-            if move_len > 0:
-                move_x /= move_len
-                move_y /= move_len
+            # Convert movement values to discrete indices:
+            # 0: Left/Up, 1: None, 2: Right/Down
+            move_idx_x = int(move_x + 1.0)
+            move_idx_y = int(move_y + 1.0)
                 
             # Calculate aim vector from agent to mouse cursor
             mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -63,27 +61,33 @@ def play_manual():
             aim_x = mouse_x - agent_x
             aim_y = mouse_y - agent_y
             aim_len = np.sqrt(aim_x**2 + aim_y**2)
+            
             if aim_len > 0:
-                aim_x /= aim_len
-                aim_y /= aim_len
+                # Calculate angle in [0, 2pi]
+                # -aim_y because grid y coordinates increase going downwards
+                aim_angle = np.arctan2(-aim_y, aim_x)
+                if aim_angle < 0:
+                    aim_angle += 2.0 * np.pi
+                # Map to discrete angle index 0..127
+                aim_idx = int(round(aim_angle / (2.0 * np.pi / 128.0))) % 128
             else:
-                aim_x, aim_y = 1.0, 0.0
+                aim_idx = 0  # Facing right (angle 0)
                 
             # Check mouse click for shooting
             click = pygame.mouse.get_pressed()
-            shoot_trigger = 1.0 if (click[0] or keys[pygame.K_SPACE]) else -1.0
+            shoot_pressed = click[0] or keys[pygame.K_SPACE]
             
-            # Map selected_weapon (0, 1, 2, 3) to weapon_select in [-1, 1]
-            weapon_select = -0.75 + selected_weapon * 0.5
+            # Map weapon choice to MultiDiscrete weapon action:
+            # 0: None, 1..4: weapon index + 1
+            weapon_idx = selected_weapon + 1 if shoot_pressed else 0
                 
-            # Construct Action Array for continuous environment (size 6)
-            # action: [move_x, move_y, aim_x, aim_y, shoot_trigger, weapon_select]
+            # Construct Discrete Action (MultiDiscrete size 4)
             action = np.array([
-                move_x, move_y,
-                aim_x, aim_y,
-                shoot_trigger,
-                weapon_select
-            ], dtype=np.float32)
+                move_idx_x,
+                move_idx_y,
+                aim_idx,
+                weapon_idx
+            ], dtype=np.int64)
             
             # 2. Step the simulator
             obs, reward, terminated, truncated, info = game_env.step(action)
@@ -102,16 +106,9 @@ def play_manual():
     finally:
         game_env.close()
 
-def play_agent(model_path, algo="sac"):
-    """Run a trained agent in the environment with visualization."""
-    
-    if algo == "sac":
-        from stable_baselines3 import SAC as AlgoClass
-    elif algo == "ppo":
-        from stable_baselines3 import PPO as AlgoClass
-    else:
-        print(f"Error: Unknown algorithm '{algo}'. Use 'sac' or 'ppo'.")
-        return
+def play_agent(model_path, env_id="ElementShooter-v0"):
+    """Run a trained PPO agent in the environment with visualization."""
+    from stable_baselines3 import PPO
     
     if not os.path.exists(model_path) and not model_path.endswith(".zip"):
         model_path = model_path + ".zip"
@@ -121,11 +118,10 @@ def play_agent(model_path, algo="sac"):
         print("Please train a model first with: python3 train.py")
         return
         
-    print(f"Loading trained {algo.upper()} agent from {model_path}...")
-    model = AlgoClass.load(model_path)
+    print(f"Loading trained PPO agent from {model_path}...")
+    model = PPO.load(model_path)
     
     # Initialize environment in human mode
-    env_id = "ElementShooter-Discrete-v0" if algo == "ppo" else "ElementShooter-v0"
     game_env = gym.make(env_id, render_mode="human")
     obs, info = game_env.reset()
     
@@ -153,25 +149,15 @@ def play_agent(model_path, algo="sac"):
 
 def main():
     parser = argparse.ArgumentParser(description="Play or evaluate Element Shooter")
-    parser.add_argument("--model", type=str, default="./models/sac_element_shooter_final", help="Path to trained model")
-    parser.add_argument("--algo", type=str, default=None, choices=["sac", "ppo"], help="Algorithm used for the model (sac or ppo). Auto-detected if not specified.")
+    parser.add_argument("--model", type=str, default="./models/ppo_element_shooter_final", help="Path to trained model")
     parser.add_argument("--manual", action="store_true", help="Play the game manually instead of using an agent")
+    parser.add_argument("--env-id", type=str, default="ElementShooter-v0", help="Gym env ID (curriculum: v0=easy, v1=medium, v2=full)")
     args = parser.parse_args()
     
     if args.manual:
-        play_manual()
+        play_manual(env_id=args.env_id)
     else:
-        # Auto-detect algorithm based on model name
-        algo = args.algo
-        if algo is None:
-            if "ppo" in args.model.lower():
-                algo = "ppo"
-            elif "sac" in args.model.lower():
-                algo = "sac"
-            else:
-                algo = "sac"  # Fallback default
-        
-        play_agent(args.model, algo=algo)
+        play_agent(args.model, env_id=args.env_id)
 
 if __name__ == "__main__":
     main()

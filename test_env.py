@@ -1,8 +1,8 @@
 import gymnasium as gym
 import numpy as np
-import env  # Registers ElementShooter-v0 and ElementShooter-Discrete-v0
+import env  # Registers ElementShooter-v0, v1, v2
 
-def test_env(env_id):
+def test_env(env_id, expected_obs_size=65):
     print(f"\n================ TESTING {env_id} ================")
     try:
         env_instance = gym.make(env_id)
@@ -17,34 +17,55 @@ def test_env(env_id):
     obs, info = env_instance.reset()
     print("Environment reset successful.")
     print(f"Initial observation shape: {obs.shape}")
+    assert obs.shape[0] == expected_obs_size, f"Expected obs size {expected_obs_size}, got {obs.shape[0]}"
+    print(f"Curriculum level: {info.get('curriculum_level', 'N/A')}")
     print(f"Initial info: {info}")
     
-    # Step through 100 times with random actions
-    print("Stepping with random actions for 100 steps...")
+    # Step through 200 times with random actions
+    print("Stepping with random actions for 200 steps...")
     step_count = 0
     total_reward = 0
+    episodes = 0
     
-    while step_count < 100:
+    while step_count < 200:
         action = env_instance.action_space.sample()
         obs, reward, terminated, truncated, info = env_instance.step(action)
         total_reward += reward
         step_count += 1
         
+        assert obs.shape[0] == expected_obs_size, f"Obs size mismatch at step {step_count}"
+        assert not np.any(np.isnan(obs)), f"NaN in obs at step {step_count}"
+        
         if terminated or truncated:
+            episodes += 1
             obs, info = env_instance.reset()
             
-    print(f"Completed {step_count} steps successfully!")
-    print(f"Total reward accumulated: {total_reward:.2f}")
-    print(f"Final observation stats: Mean={obs.mean():.4f}, Std={obs.std():.4f}")
+    print(f"Completed {step_count} steps, {episodes} episode resets.")
+    print(f"Total reward: {total_reward:.2f}, Avg reward/step: {total_reward/step_count:.4f}")
+    print(f"Obs stats: min={obs.min():.4f}, max={obs.max():.4f}, mean={obs.mean():.4f}")
     env_instance.close()
-    print(f"Sanity check for {env_id} completed successfully!")
+    print(f"✓ {env_id} passed!")
     return True
 
 def main():
-    ok1 = test_env("ElementShooter-v0")
-    ok2 = test_env("ElementShooter-Discrete-v0")
-    if ok1 and ok2:
-        print("\nAll sanity checks completed successfully!")
+    results = []
+    for env_id in ["ElementShooter-v0", "ElementShooter-v1", "ElementShooter-v2"]:
+        ok = test_env(env_id, expected_obs_size=60)
+        results.append((env_id, ok))
+    
+    print("\n================ SUMMARY ================")
+    all_ok = True
+    for env_id, ok in results:
+        status = "✓ PASS" if ok else "✗ FAIL"
+        print(f"  {status}: {env_id}")
+        if not ok:
+            all_ok = False
+    
+    if all_ok:
+        print("\nAll curriculum levels passed!")
+    else:
+        print("\nSome tests FAILED!")
+        exit(1)
 
 if __name__ == "__main__":
     main()

@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 class IntrinsicCuriosityModule(nn.Module):
-    def __init__(self, obs_dim=55, action_dim=6, latent_dim=64):
+    def __init__(self, obs_dim=60, action_dim=6, latent_dim=64):
         super(IntrinsicCuriosityModule, self).__init__()
         
         # 1. Feature Encoder: φ(s) -> maps high-dim state to low-dim features

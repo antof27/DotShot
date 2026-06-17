@@ -32,47 +32,80 @@ class Bullet:
         self.y += self.dy * self.speed
 
 
+class EnemyBullet:
+    def __init__(self, x, y, dx, dy):
+        self.x = x
+        self.y = y
+        self.dx = dx
+        self.dy = dy
+        self.speed = 5.0  # Slower than player bullets to allow dodging
+        self.radius = 5.0
+        self.active = True
+        self.color = (255, 140, 0) # Orange for enemy bullets
+
+    def update(self):
+        self.x += self.dx * self.speed
+        self.y += self.dy * self.speed
+
+
 class ElementShooterEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
 
-    def __init__(self, render_mode=None, width=800, height=800, multidiscrete=False):
+    # --- Curriculum difficulty presets ---
+    CURRICULUM = {
+        1: {  # Level 1: Easy — learn to shoot one enemy type
+            "max_enemies": 3,           # (was 2)
+            "enemy_types": [2],         # Fire only
+            "spawn_cooldown": 60,       # Spawns 1.5x faster (was 90)
+            "enemy_speed_mult": 0.9,    # Faster enemies (was 0.7)
+        },
+        2: {  # Level 2: Medium — two enemy types, moderate pressure
+            "max_enemies": 4,           # (was 3)
+            "enemy_types": [0, 2],      # Water + Fire
+            "spawn_cooldown": 50,       # (was 75)
+            "enemy_speed_mult": 1.1,    # (was 0.85)
+        },
+        3: {  # Level 3: Full game — all 4 types, normal speed
+            "max_enemies": 6,           # (was 5)
+            "enemy_types": [0, 1, 2, 3],
+            "spawn_cooldown": 40,       # (was 60)
+            "enemy_speed_mult": 1.25,   # (was 1.0)
+        },
+    }
+
+    def __init__(self, render_mode=None, width=800, height=800, curriculum_level=3):
         super(ElementShooterEnv, self).__init__()
         
         self.width = width
         self.height = height
         self.render_mode = render_mode
-        self.multidiscrete = multidiscrete
+        
+        # --- Curriculum setup ---
+        self.curriculum_level = curriculum_level
+        preset = self.CURRICULUM[curriculum_level]
+        self.allowed_enemy_types = preset["enemy_types"]
+        self.enemy_speed_mult = preset["enemy_speed_mult"]
         
         # Game constants
         self.agent_speed = 4.0
         self.agent_radius = 15.0
         self.max_health = 100.0
         self.shoot_cooldown_max = 12  # ticks between shots
-        self.max_enemies_on_screen = 5
-        self.max_enemies_tracked = 5  # For RL observation
+        self.max_enemies_on_screen = preset["max_enemies"]
+        self.max_enemies_tracked = 5  # For RL observation (always 5 slots)
         
-        if self.multidiscrete:
-            # Action space:
-            # action[0]: movement dx (0: Left, 1: None, 2: Right)
-            # action[1]: movement dy (0: Up, 1: None, 2: Down)
-            # action[2]: aim direction (0..63 -> 64 discrete angles)
-            # action[3]: weapon selection (0: None, 1: Water, 2: Grass, 3: Fire, 4: Wind)
-            self.action_space = spaces.MultiDiscrete([3, 3, 64, 5])
-        else:
-            # Action space: 
-            # action[0], action[1]: movement dx, dy in [-1, 1]
-            # action[2], action[3]: aim ax, ay in [-1, 1] (defines shooting direction vector)
-            # action[4]: weapon shoot trigger (shoot if > 0.0)
-            # action[5]: weapon selection in [-1, 1] (mapped to 4 weapons: Water, Grass, Fire, Wind)
-            self.action_space = spaces.Box(
-                low=-1.0, high=1.0, shape=(6,), dtype=np.float32
-            )
+        # Action space:
+        # action[0]: movement dx (0: Left, 1: None, 2: Right)
+        # action[1]: movement dy (0: Up, 1: None, 2: Down)
+        # action[2]: aim direction (0..127 -> 128 discrete angles)
+        # action[3]: weapon selection (0: None, 1: Water, 2: Grass, 3: Fire, 4: Wind)
+        self.action_space = spaces.MultiDiscrete([3, 3, 128, 5])
         
         # Observation space size:
         # Agent status: [x, y, vel_x, vel_y, health, cooldown, last_fired_weapon_one_hot (4)] -> 10 features
-        # 5 Closest enemies: 5 * [rel_x, rel_y, distance, health, type_one_hot (4), active_flag] -> 5 * 9 = 45 features
-        # Total = 55 features
-        obs_size = 10 + (self.max_enemies_tracked * 9)
+        # 5 Closest enemies: 5 * [rel_x, rel_y, distance, health, type_one_hot (4), correct_weapon_hint, active_flag] -> 5 * 10 = 50 features
+        # Total = 60 features
+        obs_size = 10 + (self.max_enemies_tracked * 10)
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0, shape=(obs_size,), dtype=np.float32
         )
@@ -91,7 +124,11 @@ class ElementShooterEnv(gym.Env):
         self.enemy_weakness = {v: k for k, v in self.counters.items()}
         
         # Setup Spawner
-        self.spawner = EnemySpawner(width=self.width, height=self.height, spawn_cooldown=60)
+        self.spawner = EnemySpawner(
+            width=self.width, height=self.height,
+            spawn_cooldown=preset["spawn_cooldown"],
+            allowed_types=self.allowed_enemy_types
+        )
         
         # Game State Variables
         self.agent_x = 0.0
@@ -104,14 +141,14 @@ class ElementShooterEnv(gym.Env):
         
         self.enemies = []
         self.bullets = []
+        self.enemy_bullets = []
         self.score = 0
         self.steps_survived = 0
         self.difficulty = 1.0
         
-        # --- Anti-spin tracking ---
+        # Aim direction for renderer
         self.last_aim_x = 1.0   # Default facing right
         self.last_aim_y = 0.0
-        self.prev_aim_potential = 0.0  # For PBRS aim alignment
         
         # Pygame renderer placeholder
         self.renderer = None
@@ -130,20 +167,21 @@ class ElementShooterEnv(gym.Env):
         
         self.enemies = []
         self.bullets = []
+        self.enemy_bullets = []
         self.score = 0
         self.steps_survived = 0
         self.difficulty = 1.0
         self.spawner.reset()
         
-        # Reset anti-spin state
+        # Reset aim state
         self.last_aim_x = 1.0
         self.last_aim_y = 0.0
-        self.prev_aim_potential = 0.0
         
         # Initial enemies spawn
         for _ in range(2):
             enemy = self.spawner.step(self.enemies, self.agent_x, self.agent_y, self.max_enemies_on_screen, self.difficulty)
             if enemy is not None:
+                enemy.speed *= self.enemy_speed_mult
                 self.enemies.append(enemy)
                 
         obs = self._get_obs()
@@ -196,6 +234,10 @@ class ElementShooterEnv(gym.Env):
                 type_one_hot = [0.0] * 4
                 type_one_hot[enemy.enemy_type] = 1.0
                 
+                # Weapon-counter hint: which weapon index is effective against this enemy
+                correct_weapon = self.enemy_weakness.get(enemy.enemy_type, 0)
+                weapon_hint = correct_weapon / 3.0  # Normalize to [0, 1]
+                
                 enemy_obs.extend([
                     rel_x,
                     rel_y,
@@ -205,11 +247,12 @@ class ElementShooterEnv(gym.Env):
                     type_one_hot[1],
                     type_one_hot[2],
                     type_one_hot[3],
+                    weapon_hint,
                     1.0  # active flag
                 ])
             else:
-                # Padding
-                enemy_obs.extend([0.0] * 8 + [0.0]) # rel_x, rel_y, dist, health, type_one_hot(4), active=0
+                # Padding (10 zeros matching active slot: rel_x, rel_y, dist, health, type_one_hot(4), weapon_hint, active=0)
+                enemy_obs.extend([0.0] * 10)
                 
         total_obs = np.array(agent_obs + enemy_obs, dtype=np.float32)
         # Clip to make sure it's within bounds
@@ -221,54 +264,10 @@ class ElementShooterEnv(gym.Env):
             "health": self.agent_health,
             "steps_survived": self.steps_survived,
             "difficulty": self.difficulty,
-            "enemies_count": len([e for e in self.enemies if e.alive])
+            "enemies_count": len([e for e in self.enemies if e.alive]),
+            "curriculum_level": self.curriculum_level
         }
 
-    def get_text_description(self):
-        """
-        Generates a text description of the current environment state.
-        Perfect for prompting LLM agents to make a choice.
-        """
-        # Description of map and rules
-        desc = []
-        desc.append("=== ELEMENT SHOOTER ENVIRONMENT ===")
-        desc.append(f"Grid size: {self.width}x{self.height} (Continuous 2D space).")
-        desc.append(f"Agent Status: Health={self.agent_health:.1f}/100.0, Position=({self.agent_x:.1f}, {self.agent_y:.1f}), Weapon Cooldown={self.shoot_cooldown} ticks.")
-        desc.append("Weapon rules: Water (0) beats Fire (2); Grass (1) beats Water (0); Fire (2) beats Grass (1); Wind (3) beats Flying (3).")
-        
-        # Enemies
-        active_enemies = [e for e in self.enemies if e.alive]
-        desc.append(f"Active Enemies: {len(active_enemies)} (Maximum allowed is {self.max_enemies_on_screen})")
-        
-        if active_enemies:
-            # Sort by distance
-            enemies_with_dist = []
-            for e in active_enemies:
-                dx = e.x - self.agent_x
-                dy = e.y - self.agent_y
-                dist = np.sqrt(dx**2 + dy**2)
-                enemies_with_dist.append((dist, dx, dy, e))
-            enemies_with_dist.sort(key=lambda x: x[0])
-            
-            for idx, (dist, dx, dy, enemy) in enumerate(enemies_with_dist):
-                # Calculate angle/direction description
-                angle = np.arctan2(-dy, dx) * 180 / np.pi  # -dy because grid y goes down
-                if angle < 0:
-                    angle += 360
-                    
-                # Map angle to cardinal/intercardinal direction
-                directions = ["East", "North-East", "North", "North-West", "West", "South-West", "South", "South-East", "East"]
-                dir_idx = int((angle + 22.5) / 45.0)
-                direction = directions[dir_idx]
-                
-                weakness = ["Grass Weapon", "Fire Weapon", "Water Weapon", "Wind Weapon"][enemy.enemy_type]
-                
-                desc.append(f"  - Enemy {idx+1}: Type={enemy.name} (Weakness={weakness}), Health={enemy.health:.1f}/{enemy.max_health:.1f}, Distance={dist:.1f} pixels, Direction={direction} (dx={dx:.1f}, dy={dy:.1f})")
-        else:
-            desc.append("  No enemies detected nearby.")
-            
-        desc.append("\nYour Action Output format should choose a movement vector dx, dy, aiming vector ax, ay, and weapon to fire.")
-        return "\n".join(desc)
 
     def _find_closest_targetable_enemy(self):
         """Find the closest enemy that the agent has the correct weapon type for."""
@@ -287,47 +286,34 @@ class ElementShooterEnv(gym.Env):
 
     def step(self, action):
         # 1. Parse actions
-        if self.multidiscrete:
-            # action is MultiDiscrete of size 4
-            # action[0]: movement dx (0 -> -1.0, 1 -> 0.0, 2 -> 1.0)
-            # action[1]: movement dy (0 -> -1.0, 1 -> 0.0, 2 -> 1.0)
-            move_x = float(action[0]) - 1.0
-            move_y = float(action[1]) - 1.0
+        move_x = float(action[0]) - 1.0
+        move_y = float(action[1]) - 1.0
+        
+        # Normalize movement vector if diagonal
+        move_len = np.sqrt(move_x**2 + move_y**2)
+        if move_len > 0:
+            move_x /= move_len
+            move_y /= move_len
             
-            # Normalize movement vector if diagonal
-            move_len = np.sqrt(move_x**2 + move_y**2)
-            if move_len > 0:
-                move_x /= move_len
-                move_y /= move_len
-                
-            # action[2]: aim direction (0..63 -> 64 discrete angles)
-            aim_angle = float(action[2]) * (2.0 * np.pi / 64.0)
-            aim_x = np.cos(aim_angle)
-            aim_y = -np.sin(aim_angle) # y axis goes down
-            
-            # action[3]: weapon (0 -> None, 1..4 -> weapons 0..3)
-            fired_weapon_type = int(action[3]) - 1
-            shoot_triggered = (fired_weapon_type >= 0)
-        else:
-            # action is Box of size 6
-            action = np.clip(action, -1.0, 1.0)
-            move_x, move_y = action[0], action[1]
-            aim_x, aim_y = action[2], action[3]
-            shoot_trigger = action[4]
-            weapon_select = action[5]
-            
-            fired_weapon_type = -1
-            shoot_triggered = False
-            if shoot_trigger > 0.0:
-                shoot_triggered = True
-                w_val = (weapon_select + 1.0) / 2.0  # map to [0, 1]
-                fired_weapon_type = int(w_val * 4.0)
-                fired_weapon_type = np.clip(fired_weapon_type, 0, 3)
+        # action[2]: aim direction (0..127 -> 128 discrete angles)
+        aim_angle = float(action[2]) * (2.0 * np.pi / 128.0)
+        aim_x = np.cos(aim_angle)
+        aim_y = -np.sin(aim_angle) # y axis goes down
+        
+        # action[3]: weapon (0 -> None, 1..4 -> weapons 0..3)
+        fired_weapon_type = int(action[3]) - 1
+        # Prevent shooting if there are no active enemies on the map
+        active_enemies_count = len([e for e in self.enemies if e.alive])
+        shoot_triggered = (fired_weapon_type >= 0) and (active_enemies_count > 0)
+        
+        # Keep track of last aiming vector for renderer
+        self.last_aim_x = aim_x
+        self.last_aim_y = aim_y
         
         self.steps_survived += 1
         
         # Increase difficulty slightly over time
-        self.difficulty = 1.0 + (self.steps_survived / 1200.0)  # Difficulty increases every 20 seconds at 60fps
+        self.difficulty = 1.0 + (self.steps_survived / 1200.0)
         
         # 2. Update agent velocity & position
         self.agent_vel_x = move_x * self.agent_speed
@@ -341,7 +327,8 @@ class ElementShooterEnv(gym.Env):
         self.agent_y = np.clip(self.agent_y, self.agent_radius, self.height - self.agent_radius)
         
         # =============================================
-        # REWARD CALCULATION (overhauled for SAC/PPO)
+        # SIMPLIFIED REWARD (Option A)
+        # Only 5 clear signals: kill, hit, aim, damage, death, survival
         # =============================================
         reward = 0.0
         
@@ -357,7 +344,6 @@ class ElementShooterEnv(gym.Env):
                 bullet_dx = aim_x / aim_len
                 bullet_dy = aim_y / aim_len
             else:
-                # Shoot in movement direction if aim is empty, or default to facing Right
                 move_len = np.sqrt(move_x**2 + move_y**2)
                 if move_len > 0.1:
                     bullet_dx = move_x / move_len
@@ -372,49 +358,82 @@ class ElementShooterEnv(gym.Env):
             self.last_fired_weapon = fired_weapon_type
             fired = True
             
-            # --- R_aim: Aim Alignment Reward (no range limit) ---
-            target_enemy_type = self.counters.get(fired_weapon_type, -1)
-            target_enemies = [e for e in self.enemies if e.alive and e.enemy_type == target_enemy_type]
-            if target_enemies:
-                closest_target = min(target_enemies, key=lambda e: np.sqrt((e.x - self.agent_x)**2 + (e.y - self.agent_y)**2))
+            # --- R_aim: Decoupled Alignment Reward ---
+            # Reward aiming at the ABSOLUTE closest active enemy, regardless of weapon type
+            active_enemies = [e for e in self.enemies if e.alive]
+            if active_enemies:
+                closest_target = min(active_enemies, key=lambda e: np.sqrt((e.x - self.agent_x)**2 + (e.y - self.agent_y)**2))
                 ex = closest_target.x - self.agent_x
                 ey = closest_target.y - self.agent_y
                 edist = np.sqrt(ex**2 + ey**2)
                 if edist > 0:
                     ex /= edist
                     ey /= edist
-                    # Dot product of bullet direction and enemy direction
                     alignment = bullet_dx * ex + bullet_dy * ey
-                    if alignment > 0.85:
-                        reward += 1.0   # Good aim
-                        if alignment > 0.95:
-                            reward += 1.5  # Excellent aim bonus
-                    else:
-                        reward -= 0.3   # Firing in wrong direction at correct enemy type
-            
+                    if alignment > 0.7:
+                        reward += 1.5   # Decent aim
+                        if alignment > 0.85:
+                            reward += 2.8  # Great aim (total +4.0)
+                    
         # 4. Update Bullets
         active_bullets = []
+        missed_bullets_count = 0
         for bullet in self.bullets:
             bullet.update()
             if bullet.active:
-                # Bound checking
                 if 0 <= bullet.x <= self.width and 0 <= bullet.y <= self.height:
                     active_bullets.append(bullet)
+                else:
+                    missed_bullets_count += 1
         self.bullets = active_bullets
         
+        # --- P_miss: Penalty for bullets that go off-screen (missed shots) ---
+        reward -= missed_bullets_count * 1.7
+        
         # 5. Spawning & Updating Enemies
-        # Call spawner
         new_enemy = self.spawner.step(
             self.enemies, self.agent_x, self.agent_y, 
             self.max_enemies_on_screen, self.difficulty
         )
         if new_enemy is not None:
+            new_enemy.speed *= self.enemy_speed_mult
             self.enemies.append(new_enemy)
             
         # Update enemies positions
         for enemy in self.enemies:
             if enemy.alive:
                 enemy.update(self.agent_x, self.agent_y)
+                
+        # Enemy Shooting (Curriculum Level 3 only)
+        if self.curriculum_level == 3:
+            for enemy in self.enemies:
+                if not enemy.alive:
+                    continue
+                if not hasattr(enemy, 'shoot_cooldown'):
+                    enemy.shoot_cooldown = np.random.randint(40, 120)
+                
+                enemy.shoot_cooldown -= 1
+                if enemy.shoot_cooldown <= 0:
+                    # Fire directly towards agent
+                    dx = self.agent_x - enemy.x
+                    dy = self.agent_y - enemy.y
+                    dist = np.sqrt(dx**2 + dy**2)
+                    if dist > 0:
+                        bullet_dx = dx / dist
+                        bullet_dy = dy / dist
+                        new_eb = EnemyBullet(enemy.x, enemy.y, bullet_dx, bullet_dy)
+                        self.enemy_bullets.append(new_eb)
+                    cooldown_max = max(60, int(np.random.randint(120, 240) / self.difficulty))
+                    enemy.shoot_cooldown = cooldown_max
+                    
+        # Update Enemy Bullets
+        active_enemy_bullets = []
+        for eb in self.enemy_bullets:
+            eb.update()
+            if eb.active:
+                if 0 <= eb.x <= self.width and 0 <= eb.y <= self.height:
+                    active_enemy_bullets.append(eb)
+        self.enemy_bullets = active_enemy_bullets
                 
         # 6. Collisions: Bullet vs Enemy
         for bullet in self.bullets:
@@ -423,32 +442,21 @@ class ElementShooterEnv(gym.Env):
             for enemy in self.enemies:
                 if not enemy.alive:
                     continue
-                # Distance bullet to enemy
                 dist = np.sqrt((bullet.x - enemy.x)**2 + (bullet.y - enemy.y)**2)
                 if dist < (bullet.radius + enemy.radius):
                     bullet.active = False
                     
-                    # Check element effectiveness
                     correct_weapon = self.enemy_weakness.get(enemy.enemy_type, -1)
                     if bullet.bullet_type == correct_weapon:
                         # --- R_hit: Effective hit! ---
                         damage = 50.0
                         enemy.take_damage(damage)
-                        reward += 5.0  # Hit with correct weapon
+                        reward += 3.0  # Correct weapon hit
                         
                         if not enemy.alive:
                             # --- R_kill: Enemy killed! ---
                             self.score += 10
-                            reward += 25.0  # Large kill reward
-                            
-                            # --- R_snipe: Distance bonus for long-range kills ---
-                            kill_dist = np.sqrt((enemy.x - self.agent_x)**2 + (enemy.y - self.agent_y)**2)
-                            max_dist = np.sqrt(self.width**2 + self.height**2)
-                            dist_bonus = (kill_dist / max_dist) * 10.0  # Up to +10 for max range
-                            reward += dist_bonus
-                    else:
-                        # Ineffective hit — wrong weapon type
-                        reward -= 0.1
+                            reward += 10.0  # Kill reward
                     break  # Bullet hit this enemy, stop checking others
                     
         # Filter dead enemies
@@ -461,79 +469,45 @@ class ElementShooterEnv(gym.Env):
                 continue
             dist = np.sqrt((enemy.x - self.agent_x)**2 + (enemy.y - self.agent_y)**2)
             if dist < (self.agent_radius + enemy.radius):
-                # Contact! Deal damage to agent
                 tick_damage = (enemy.damage_rate / 30.0) * (1.0 + (self.difficulty - 1.0) * 0.1)
                 self.agent_health -= tick_damage
                 damage_taken += tick_damage
                 
         # --- P_damage: Damage taken penalty ---
-        reward -= damage_taken * 2.0
+        reward -= damage_taken * 1.1
         
-        # --- P_wrong_fire: Wrong weapon / no target penalties ---
-        if fired:
-            active_enemies = [e for e in self.enemies if e.alive]
-            if len(active_enemies) == 0:
-                # P_idle_fire: No enemies at all, wasting ammo
-                reward -= 0.5
-            else:
-                matching_enemy_exists = False
-                for enemy in active_enemies:
-                    correct_weapon = self.enemy_weakness.get(enemy.enemy_type, -1)
-                    if fired_weapon_type == correct_weapon:
-                        matching_enemy_exists = True
-                        break
-                if not matching_enemy_exists:
-                    # Fired wrong weapon type — no matching target on screen
-                    reward -= 0.1
-                    
-        # --- P_wall: Wall avoidance penalty (stronger) ---
-        wall_margin = 100.0
-        wall_dist = min(
-            self.agent_x, self.width - self.agent_x, 
-            self.agent_y, self.height - self.agent_y
-        )
-        if wall_dist < wall_margin:
-            # Quadratic penalty — gets very strong near walls
-            wall_penalty = 0.5 * ((1.0 - wall_dist / wall_margin) ** 2)
-            reward -= wall_penalty
+        # 7.5 Collisions: Enemy Bullet vs Agent
+        eb_damage_taken = 0.0
+        for eb in self.enemy_bullets:
+            if not eb.active:
+                continue
+            dist = np.sqrt((eb.x - self.agent_x)**2 + (eb.y - self.agent_y)**2)
+            if dist < (self.agent_radius + eb.radius):
+                eb.active = False
+                bullet_damage = 15.0
+                self.agent_health -= bullet_damage
+                eb_damage_taken += bullet_damage
+                
+        # --- P_bullet: Penalty for getting hit by enemy bullet ---
+        reward -= eb_damage_taken * 1.5
 
-        # --- P_spin: Anti-spin penalty (only for continuous SAC, disabled for discrete PPO) ---
-        aim_len_step = np.sqrt(aim_x**2 + aim_y**2)
-        if not self.multidiscrete:
-            if aim_len_step > 0.1:
-                norm_ax = aim_x / aim_len_step
-                norm_ay = aim_y / aim_len_step
-                # Angular change = 1 - dot product with last frame's aim
-                dot_with_last = norm_ax * self.last_aim_x + norm_ay * self.last_aim_y
-                angular_change = 1.0 - dot_with_last  # 0 = no rotation, 2 = full 180° flip
-                if angular_change > 0.3:  # Threshold for "spinning"
-                    reward -= angular_change * 0.05  # Reduced penalty (0.05 instead of 1.0) so as not to suppress exploration
-                self.last_aim_x = norm_ax
-                self.last_aim_y = norm_ay
+        # --- P_edge: Edge/Corner penalty to prevent camping ---
+        edge_margin = 100.0
+        edge_penalty = 0.0
+        if self.agent_x < edge_margin:
+            edge_penalty += (edge_margin - self.agent_x) / edge_margin
+        elif self.agent_x > self.width - edge_margin:
+            edge_penalty += (self.agent_x - (self.width - edge_margin)) / edge_margin
+            
+        if self.agent_y < edge_margin:
+            edge_penalty += (edge_margin - self.agent_y) / edge_margin
+        elif self.agent_y > self.height - edge_margin:
+            edge_penalty += (self.agent_y - (self.height - edge_margin)) / edge_margin
+            
+        reward -= edge_penalty * 0.08  # Max corner penalty = -0.16/step (exceeds +0.05 survival bonus)
 
-        # --- PBRS: Aim alignment potential (every step) ---
-        if aim_len_step > 0.1:
-            norm_aim_x = aim_x / aim_len_step
-            norm_aim_y = aim_y / aim_len_step
-            best_alignment = -1.0
-            for enemy in self.enemies:
-                if not enemy.alive:
-                    continue
-                ex = enemy.x - self.agent_x
-                ey = enemy.y - self.agent_y
-                edist = np.sqrt(ex**2 + ey**2)
-                if edist > 0:
-                    alignment = (norm_aim_x * ex + norm_aim_y * ey) / edist
-                    best_alignment = max(best_alignment, alignment)
-            current_potential = max(0.0, best_alignment)
-            pbrs_reward = 0.99 * current_potential - self.prev_aim_potential
-            reward += pbrs_reward * 0.3  # Scale factor
-            self.prev_aim_potential = current_potential
-        else:
-            self.prev_aim_potential = 0.0
-
-        # --- R_survival: Tiny survival bonus ---
-        reward += 0.01
+        # --- R_survival: Survival bonus per step ---
+        reward += 0.05
         
         # 8. Check Termination (Death)
         terminated = False
@@ -542,9 +516,9 @@ class ElementShooterEnv(gym.Env):
         if self.agent_health <= 0:
             self.agent_health = 0.0
             terminated = True
-            reward -= 50.0  # Death penalty
+            reward -= 10.0  # Death penalty
             
-        # Optional: Max steps limit to prevent infinite loops during training
+        # Max steps limit
         if self.steps_survived >= 3600:  # 1 minute at 60 fps
             truncated = True
             
@@ -570,7 +544,8 @@ class ElementShooterEnv(gym.Env):
             self.enemies, self.bullets, self.score, self.steps_survived,
             self.last_fired_weapon, self.shoot_cooldown, self.difficulty,
             self.last_aim_x, self.last_aim_y,
-            self.render_mode
+            self.render_mode,
+            enemy_bullets=self.enemy_bullets
         )
 
     def close(self):

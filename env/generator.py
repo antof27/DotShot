@@ -11,25 +11,25 @@ class Enemy:
         if enemy_type == 0:  # Water (Blue)
             self.max_health = 100.0
             self.speed = 1.8
-            self.damage_rate = 15.0  # Damage dealt per second on contact
+            self.damage_rate = 20.0  # Damage dealt per second on contact (was 15)
             self.color = (0, 150, 255)
             self.name = "Water"
         elif enemy_type == 1:  # Grass (Green)
             self.max_health = 150.0
             self.speed = 1.0
-            self.damage_rate = 25.0
+            self.damage_rate = 32.0  # (was 25)
             self.color = (50, 200, 50)
             self.name = "Grass"
         elif enemy_type == 2:  # Fire (Red)
             self.max_health = 75.0
             self.speed = 2.8
-            self.damage_rate = 12.0
+            self.damage_rate = 16.0  # (was 12)
             self.color = (255, 50, 50)
             self.name = "Fire"
         else:  # Flying (Purple)
             self.max_health = 50.0
             self.speed = 3.2
-            self.damage_rate = 8.0
+            self.damage_rate = 11.0  # (was 8)
             self.color = (200, 50, 255)
             self.name = "Flying"
             
@@ -53,11 +53,12 @@ class Enemy:
             self.y += (dy / dist) * self.speed
 
 class EnemySpawner:
-    def __init__(self, width=800, height=800, spawn_cooldown=60):
+    def __init__(self, width=800, height=800, spawn_cooldown=60, allowed_types=None):
         self.width = width
         self.height = height
         self.spawn_cooldown = spawn_cooldown  # in steps/ticks
         self.cooldown_timer = 0
+        self.allowed_types = allowed_types if allowed_types is not None else [0, 1, 2, 3]
         
     def reset(self):
         self.cooldown_timer = 0
@@ -90,12 +91,10 @@ class EnemySpawner:
             dy = y - agent_y
             dist = np.sqrt(dx**2 + dy**2)
             if dist < 200.0:
-                # Push further away towards map boundary
-                # Or just regenerate coordinates
                 return None
                 
-            # Randomly select enemy type (equal probability or weighted)
-            enemy_type = np.random.randint(0, 4)
+            # Randomly select enemy type from allowed types only
+            enemy_type = self.allowed_types[np.random.randint(0, len(self.allowed_types))]
             new_enemy = Enemy(x, y, enemy_type)
             
             # Scale enemy stats with difficulty (e.g. slight speed boost)
