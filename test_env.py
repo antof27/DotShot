@@ -52,6 +52,9 @@ def main():
     for env_id in ["ElementShooter-v0", "ElementShooter-v1", "ElementShooter-v2"]:
         ok = test_env(env_id, expected_obs_size=60)
         results.append((env_id, ok))
+        
+    ok_v3 = test_env("ElementShooter-v3", expected_obs_size=120)
+    results.append(("ElementShooter-v3", ok_v3))
     
     print("\n================ SUMMARY ================")
     all_ok = True

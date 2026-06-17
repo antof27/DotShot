@@ -55,8 +55,8 @@ def play_manual(env_id="ElementShooter-v0"):
                 
             # Calculate aim vector from agent to mouse cursor
             mouse_x, mouse_y = pygame.mouse.get_pos()
-            agent_x = game_env.unwrapped.agent_x
-            agent_y = game_env.unwrapped.agent_y
+            agent_x = game_env.unwrapped.agent_x[0] if isinstance(game_env.unwrapped.agent_x, list) else game_env.unwrapped.agent_x
+            agent_y = game_env.unwrapped.agent_y[0] if isinstance(game_env.unwrapped.agent_y, list) else game_env.unwrapped.agent_y
             
             aim_x = mouse_x - agent_x
             aim_y = mouse_y - agent_y
@@ -88,6 +88,12 @@ def play_manual(env_id="ElementShooter-v0"):
                 aim_idx,
                 weapon_idx
             ], dtype=np.int64)
+            
+            # Pad action with idle actions for secondary agents if in multi-agent mode
+            num_agents = getattr(game_env, "num_agents", 1)
+            if num_agents > 1:
+                extra_actions = [1, 1, 0, 0] * (num_agents - 1)
+                action = np.concatenate([action, np.array(extra_actions, dtype=np.int64)])
             
             # 2. Step the simulator
             obs, reward, terminated, truncated, info = game_env.step(action)

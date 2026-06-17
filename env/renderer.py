@@ -81,6 +81,16 @@ class PygameRenderer:
                aim_x, aim_y,
                render_mode="human", enemy_bullets=None):
                
+        # Convert single-agent scalar inputs to lists for uniform multi-agent support
+        if not isinstance(agent_x, (list, np.ndarray)):
+            agent_x = [agent_x]
+            agent_y = [agent_y]
+            agent_health = [agent_health]
+            shoot_cooldown = [shoot_cooldown]
+            last_fired_weapon = [last_fired_weapon]
+            aim_x = [aim_x]
+            aim_y = [aim_y]
+
         # Process Pygame event queue to avoid "Application not responding"
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -168,7 +178,12 @@ class PygameRenderer:
                 self.draw_glow_circle(self.screen, enemy.color, (ex, ey), r, glow_radius=15, alpha=80)
                 
                 # --- TYPE SPECIFIC ENEMY DRAWING ---
-                if enemy.enemy_type == 0:  # Water: Draw concentric ripples
+                if getattr(enemy, 'is_ally', False):
+                    # Draw Ally: glowing white celestial circle with a light blue neon core/outline
+                    pygame.draw.circle(self.screen, (255, 255, 255), (ex, ey), r)
+                    pygame.draw.circle(self.screen, (220, 240, 255), (ex, ey), r - 5, width=2)
+                    pygame.draw.circle(self.screen, (255, 255, 255), (ex, ey), 4)
+                elif enemy.enemy_type == 0:  # Water: Draw concentric ripples
                     pygame.draw.circle(self.screen, enemy.color, (ex, ey), r, width=2)
                     pygame.draw.circle(self.screen, (100, 200, 255), (ex, ey), r - 5, width=1)
                     pygame.draw.circle(self.screen, (255, 255, 255), (ex, ey), 4)
@@ -224,58 +239,64 @@ class PygameRenderer:
                 # Fill (green)
                 pygame.draw.rect(self.screen, (50, 220, 50), (bar_x, bar_y, int(bar_width * health_ratio), bar_height), border_radius=2)
 
-        # 6. Draw Agent
-        agent_color = (255, 255, 255)
-        self.draw_glow_circle(self.screen, agent_color, (int(agent_x), int(agent_y)), 15, glow_radius=15, alpha=80)
-        
-        # Draw dynamic mechanical weapon turret/aiming gun
-        aim_len = np.sqrt(aim_x**2 + aim_y**2)
-        if aim_len > 0.01:
-            ax = aim_x / aim_len
-            ay = aim_y / aim_len
-            # Determine gun color based on selected weapon
-            gun_colors = [
-                (0, 120, 255),    # Water (Blue)
-                (50, 220, 50),    # Grass (Green)
-                (255, 50, 50),    # Fire (Red)
-                (220, 220, 220),  # Wind (White)
-            ]
-            gun_color = gun_colors[last_fired_weapon] if (0 <= last_fired_weapon < 4) else (200, 200, 200)
+        # 6. Draw Agents
+        for idx in range(len(agent_x)):
+            agent_color = (255, 255, 255) if idx == 0 else (180, 240, 255)
+            ax_pos, ay_pos = int(agent_x[idx]), int(agent_y[idx])
+            self.draw_glow_circle(self.screen, agent_color, (ax_pos, ay_pos), 15, glow_radius=15, alpha=80)
             
-            # Draw gun barrel
-            gun_end_x = agent_x + ax * 26
-            gun_end_y = agent_y + ay * 26
-            pygame.draw.line(self.screen, (30, 30, 30), (int(agent_x), int(agent_y)), (int(gun_end_x), int(gun_end_y)), 7)
-            pygame.draw.line(self.screen, gun_color, (int(agent_x), int(agent_y)), (int(gun_end_x), int(gun_end_y)), 3)
+            # Draw dynamic mechanical weapon turret/aiming gun
+            aim_len = np.sqrt(aim_x[idx]**2 + aim_y[idx]**2)
+            if aim_len > 0.01:
+                ax = aim_x[idx] / aim_len
+                ay = aim_y[idx] / aim_len
+                # Determine gun color based on selected weapon
+                gun_colors = [
+                    (0, 120, 255),    # Water (Blue)
+                    (50, 220, 50),    # Grass (Green)
+                    (255, 50, 50),    # Fire (Red)
+                    (220, 220, 220),  # Wind (White)
+                ]
+                lf_weapon = last_fired_weapon[idx]
+                gun_color = gun_colors[lf_weapon] if (0 <= lf_weapon < 4) else (200, 200, 200)
+                
+                # Draw gun barrel
+                gun_end_x = ax_pos + ax * 26
+                gun_end_y = ay_pos + ay * 26
+                pygame.draw.line(self.screen, (30, 30, 30), (ax_pos, ay_pos), (int(gun_end_x), int(gun_end_y)), 7)
+                pygame.draw.line(self.screen, gun_color, (ax_pos, ay_pos), (int(gun_end_x), int(gun_end_y)), 3)
+                
+                # Gun muzzle glow
+                pygame.draw.circle(self.screen, gun_color, (int(gun_end_x), int(gun_end_y)), 4)
+                
+            # Draw central white core of the agent
+            pygame.draw.circle(self.screen, agent_color, (ax_pos, ay_pos), 8)
             
-            # Gun muzzle glow
-            pygame.draw.circle(self.screen, gun_color, (int(gun_end_x), int(gun_end_y)), 4)
-            
-        # Draw central white core of the agent
-        pygame.draw.circle(self.screen, (255, 255, 255), (int(agent_x), int(agent_y)), 8)
-        
-        # Add visual shield/health ring around agent
-        health_color = (50, 225, 50)
-        if agent_health < 30.0:
-            health_color = (255, 50, 50)
-        elif agent_health < 70.0:
-            health_color = (255, 165, 0)
-            
-        health_arc_ratio = agent_health / max_health
-        if health_arc_ratio > 0:
-            pygame.draw.circle(self.screen, health_color, (int(agent_x), int(agent_y)), 20, width=2)
-            
-        # Draw gun cooldown arc
-        if shoot_cooldown > 0:
-            cooldown_ratio = shoot_cooldown / 12.0
-            rect = pygame.Rect(int(agent_x) - 24, int(agent_y) - 24, 48, 48)
-            pygame.draw.arc(self.screen, (255, 255, 255), rect, 0, cooldown_ratio * 2 * np.pi, 2)
+            # Add visual shield/health ring around agent
+            health_color = (50, 225, 50)
+            a_hp = agent_health[idx]
+            if a_hp < 30.0:
+                health_color = (255, 50, 50)
+            elif a_hp < 70.0:
+                health_color = (255, 165, 0)
+                
+            health_arc_ratio = a_hp / max_health
+            if health_arc_ratio > 0:
+                pygame.draw.circle(self.screen, health_color, (ax_pos, ay_pos), 20, width=2)
+                
+            # Draw gun cooldown arc
+            sc_val = shoot_cooldown[idx]
+            if sc_val > 0:
+                cooldown_ratio = sc_val / 12.0
+                rect = pygame.Rect(ax_pos - 24, ay_pos - 24, 48, 48)
+                pygame.draw.arc(self.screen, (255, 255, 255), rect, 0, cooldown_ratio * 2 * np.pi, 2)
 
         # 7. Draw HUD Overlay
-        # Background glassmorphic panel for stats
-        hud_panel = pygame.Surface((220, 160), pygame.SRCALPHA)
+        # Background glassmorphic panel for stats (expand height for multiple agents)
+        hud_panel_height = 140 + len(agent_health) * 25
+        hud_panel = pygame.Surface((220, hud_panel_height), pygame.SRCALPHA)
         hud_panel.fill((20, 30, 45, 180))  # Semi-transparent dark blue
-        pygame.draw.rect(hud_panel, (50, 75, 110, 255), (0, 0, 220, 160), width=1, border_radius=8)
+        pygame.draw.rect(hud_panel, (50, 75, 110, 255), (0, 0, 220, hud_panel_height), width=1, border_radius=8)
         self.screen.blit(hud_panel, (15, 15))
         
         # Text renderings
@@ -292,15 +313,28 @@ class PygameRenderer:
         diff_text = self.font_hud.render(f"DIFFICULTY:  {difficulty:.2f}x", True, (255, 100, 255))
         self.screen.blit(diff_text, (25, 95))
         
-        hp_text = self.font_hud.render(f"HEALTH:  {agent_health:.1f}/100.0", True, health_color)
-        self.screen.blit(hp_text, (25, 115))
-        
-        # Health Bar graphic
+        # Health Bars graphic (support multi-agent stack)
         hp_bar_width = 190
         hp_bar_height = 8
-        pygame.draw.rect(self.screen, (40, 50, 65), (25, 140, hp_bar_width, hp_bar_height), border_radius=4)
-        if agent_health > 0:
-            pygame.draw.rect(self.screen, health_color, (25, 140, int(hp_bar_width * (agent_health/max_health)), hp_bar_height), border_radius=4)
+        
+        for idx in range(len(agent_health)):
+            a_hp = agent_health[idx]
+            h_color = (50, 225, 50)
+            if a_hp < 30.0:
+                h_color = (255, 50, 50)
+            elif a_hp < 70.0:
+                h_color = (255, 165, 0)
+                
+            label = f"P{idx+1} HP:  {a_hp:.1f}/100.0" if len(agent_health) > 1 else f"HEALTH:  {a_hp:.1f}/100.0"
+            hp_text = self.font_hud.render(label, True, h_color)
+            
+            y_offset = idx * 25
+            self.screen.blit(hp_text, (25, 115 + y_offset))
+            
+            hp_bar_y = 135 + y_offset
+            pygame.draw.rect(self.screen, (40, 50, 65), (25, hp_bar_y, hp_bar_width, hp_bar_height), border_radius=4)
+            if a_hp > 0:
+                pygame.draw.rect(self.screen, h_color, (25, hp_bar_y, int(hp_bar_width * (a_hp/max_health)), hp_bar_height), border_radius=4)
             
         # Draw Weapon Selection Interface (bottom left panel)
         weapon_panel = pygame.Surface((280, 50), pygame.SRCALPHA)
@@ -321,7 +355,7 @@ class PygameRenderer:
             slot_y = self.height - 55
             
             # Highlight active slot
-            is_active = (idx == last_fired_weapon)
+            is_active = (idx in last_fired_weapon) if isinstance(last_fired_weapon, (list, np.ndarray)) else (idx == last_fired_weapon)
             border_color = (255, 255, 255) if is_active else (60, 80, 100)
             
             pygame.draw.rect(self.screen, border_color, (slot_x, slot_y, 55, 35), width=2 if is_active else 1, border_radius=4)

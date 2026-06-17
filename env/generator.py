@@ -87,10 +87,14 @@ class EnemySpawner:
                 y = np.random.uniform(0, self.height)
                 
             # Double check spawn distance to agent to prevent instant kills
-            dx = x - agent_x
-            dy = y - agent_y
-            dist = np.sqrt(dx**2 + dy**2)
-            if dist < 200.0:
+            if isinstance(agent_x, (list, np.ndarray)):
+                min_dist = min(np.sqrt((x - ax)**2 + (y - ay)**2) for ax, ay in zip(agent_x, agent_y))
+            else:
+                dx = x - agent_x
+                dy = y - agent_y
+                min_dist = np.sqrt(dx**2 + dy**2)
+                
+            if min_dist < 200.0:
                 return None
                 
             # Randomly select enemy type from allowed types only
