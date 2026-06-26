@@ -11,7 +11,7 @@ def play_manual(env_id="ElementShooter-v0"):
     print("Controls:")
     print("  Movement: W, A, S, D  or  Arrow Keys")
     print("  Aiming:   Move Mouse Cursor")
-    print("  Weapons:  Press 1 (Water), 2 (Grass), 3 (Fire), 4 (Wind)")
+    print("  Weapons:  Press 1 (Water), 2 (Grass), 3 (Fire)")
     print("            Click Left Mouse Button to shoot selected weapon")
     print("==================================================\n")
     
@@ -38,7 +38,6 @@ def play_manual(env_id="ElementShooter-v0"):
             if keys[pygame.K_1]: selected_weapon = 0
             elif keys[pygame.K_2]: selected_weapon = 1
             elif keys[pygame.K_3]: selected_weapon = 2
-            elif keys[pygame.K_4]: selected_weapon = 3
             
             # Map movement WASD / Arrows
             move_x = 0.0
@@ -68,8 +67,8 @@ def play_manual(env_id="ElementShooter-v0"):
                 aim_angle = np.arctan2(-aim_y, aim_x)
                 if aim_angle < 0:
                     aim_angle += 2.0 * np.pi
-                # Map to discrete angle index 0..127
-                aim_idx = int(round(aim_angle / (2.0 * np.pi / 128.0))) % 128
+                # Map to discrete angle index 0..63
+                aim_idx = int(round(aim_angle / (2.0 * np.pi / 64.0))) % 64
             else:
                 aim_idx = 0  # Facing right (angle 0)
                 
@@ -90,7 +89,7 @@ def play_manual(env_id="ElementShooter-v0"):
             ], dtype=np.int64)
             
             # Pad action with idle actions for secondary agents if in multi-agent mode
-            num_agents = getattr(game_env, "num_agents", 1)
+            num_agents = getattr(game_env.unwrapped, "num_agents", 1)
             if num_agents > 1:
                 extra_actions = [1, 1, 0, 0] * (num_agents - 1)
                 action = np.concatenate([action, np.array(extra_actions, dtype=np.int64)])

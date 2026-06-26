@@ -20,6 +20,18 @@ def load_best_hyperparams(json_path=None):
     print("No tuned hyperparameters found. Using default PPO parameters.")
     return {}
 
+def cosine_annealing_schedule(initial_value: float, min_value: float = 1e-6):
+    """
+    Cosine Annealing Learning Rate Schedule for Stable Baselines 3 PPO.
+    Natively receives progress_remaining which goes from 1.0 (start) to 0.0 (end).
+    """
+    import numpy as np
+    def func(progress_remaining: float) -> float:
+        # progress_remaining goes from 1.0 down to 0.0
+        cos_out = np.cos((1.0 - progress_remaining) * np.pi)
+        return min_value + 0.5 * (initial_value - min_value) * (1.0 + cos_out)
+    return func
+
 def main():
     parser = argparse.ArgumentParser(description="Train a PPO agent on the Element Shooter environment")
     parser.add_argument("--steps", type=int, default=1000000, help="Total timesteps to train")
@@ -34,24 +46,45 @@ def main():
     # 1. Setup folders
     os.makedirs(args.save_dir, exist_ok=True)
     
-    # 2. Create environment
+    # 2. Load tuned parameters
+    tuned_params = load_best_hyperparams()
+
+    # 3. Create environment
     from stable_baselines3.common.env_util import make_vec_env
     env_id = args.env_id
     print(f"Initializing {args.num_envs} parallel '{env_id}' environments...")
     
     if args.curiosity:
         from env.curiosity import CuriosityWrapper
+        
+        # Load tuned curiosity parameters or use default values
+        eta = tuned_params.get("eta", 0.1)
+        beta = tuned_params.get("beta", 0.2)
+        lr_icm = tuned_params.get("lr_icm", 1e-4)
+        R_min = tuned_params.get("R_min", -150.0)
+        R_max = tuned_params.get("R_max", -40.0)
+        
         print("Wrapping environments with Intrinsic Curiosity Module (ICM)...")
+        print(f"  eta: {eta}, beta: {beta}, lr_icm: {lr_icm}, R_min: {R_min}, R_max: {R_max}")
+        
+        wrapper_kwargs = {
+            "eta": eta,
+            "beta": beta,
+            "lr": lr_icm,
+            "R_min": R_min,
+            "R_max": R_max
+        }
+        
         game_env = make_vec_env(
             env_id, 
             n_envs=args.num_envs,
             wrapper_class=CuriosityWrapper,
-            wrapper_kwargs={"eta": 0.1}
+            wrapper_kwargs=wrapper_kwargs
         )
     else:
         game_env = make_vec_env(env_id, n_envs=args.num_envs)
         
-    # 3. Load checkpoint or initialize new model
+    # 4. Load checkpoint or initialize new model
     prefix = "ppo_element_shooter"
     
     if args.resume:
@@ -62,27 +95,30 @@ def main():
             
         print(f"Resuming training from checkpoint: {checkpoint_path}...")
         
-        # Load tuned parameters to override during load
-        tuned_params = load_best_hyperparams()
         custom_objects = {}
         if tuned_params:
             print("Overriding hyperparameters with new tuned parameters:")
-            keys_to_override = ["learning_rate", "gamma", "batch_size", "n_steps", "ent_coef"]
+            keys_to_override = ["gamma", "batch_size", "n_steps", "ent_coef"]
                 
             for key in keys_to_override:
                 if key in tuned_params:
                     custom_objects[key] = tuned_params[key]
                     print(f"  {key}: {tuned_params[key]}")
+            
+            # Apply learning rate schedule
+            initial_lr = tuned_params.get("learning_rate", 3e-4)
+            custom_objects["learning_rate"] = cosine_annealing_schedule(initial_lr)
+            print(f"  learning_rate: Cosine Annealing (initial={initial_lr})")
+            
             print("Note: Network architecture (net_arch) cannot be changed when resuming a checkpoint.")
             
         model = PPO.load(checkpoint_path, env=game_env, custom_objects=custom_objects)
         # Ensure tensorboard logging path is preserved
         model.tensorboard_log = args.tb_log
     else:
-        # Load tuned parameters or use defaults
-        tuned_params = load_best_hyperparams()
+        initial_lr = tuned_params.get("learning_rate", 3e-4)
+        learning_rate = cosine_annealing_schedule(initial_lr)
         
-        learning_rate = tuned_params.get("learning_rate", 3e-4)
         gamma = tuned_params.get("gamma", 0.99)
         batch_size = tuned_params.get("batch_size", 256)
         net_arch_width = tuned_params.get("net_arch_width", 512)
@@ -96,7 +132,7 @@ def main():
         )
         
         print("\n--- PPO Training Hyperparameters ---")
-        print(f"Learning Rate:    {learning_rate:.2e}")
+        print(f"Learning Rate:    Cosine Annealing (initial={initial_lr})")
         print(f"Gamma:            {gamma:.4f}")
         print(f"N Steps:          {n_steps}")
         print(f"Batch Size:       {batch_size}")
@@ -121,18 +157,34 @@ def main():
             verbose=1
         )
     
-    # 5. Checkpoints
+    # 5. Checkpoints & Callbacks
     checkpoint_callback = CheckpointCallback(
-        save_freq=25000,
+        save_freq=50000,
         save_path=args.save_dir,
         name_prefix=prefix
     )
+    
+    callbacks = [checkpoint_callback]
+    if args.curiosity:
+        from env.curiosity import CuriosityCallback
+        import numpy as np
+        obs_dim = int(np.prod(game_env.observation_space.shape))
+        action_dim = int(np.prod(game_env.action_space.shape))
+        curiosity_callback = CuriosityCallback(
+            obs_dim=obs_dim,
+            action_dim=action_dim,
+            eta=eta,
+            beta=beta,
+            lr=lr_icm
+        )
+        callbacks.append(curiosity_callback)
+        print("Centralized Intrinsic Curiosity Module (ICM) Callback registered.")
     
     # 6. Learn
     print(f"Starting PPO training for {args.steps} steps...")
     model.learn(
         total_timesteps=args.steps, 
-        callback=checkpoint_callback,
+        callback=callbacks,
         reset_num_timesteps=False if args.resume else True
     )
     

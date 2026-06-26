@@ -20,18 +20,12 @@ class Enemy:
             self.damage_rate = 32.0  # (was 25)
             self.color = (50, 200, 50)
             self.name = "Grass"
-        elif enemy_type == 2:  # Fire (Red)
+        else:  # Fire (Red)
             self.max_health = 75.0
             self.speed = 2.8
             self.damage_rate = 16.0  # (was 12)
             self.color = (255, 50, 50)
             self.name = "Fire"
-        else:  # Flying (Purple)
-            self.max_health = 50.0
-            self.speed = 3.2
-            self.damage_rate = 11.0  # (was 8)
-            self.color = (200, 50, 255)
-            self.name = "Flying"
             
         self.health = self.max_health
         self.alive = True
@@ -58,7 +52,7 @@ class EnemySpawner:
         self.height = height
         self.spawn_cooldown = spawn_cooldown  # in steps/ticks
         self.cooldown_timer = 0
-        self.allowed_types = allowed_types if allowed_types is not None else [0, 1, 2, 3]
+        self.allowed_types = allowed_types if allowed_types is not None else [0, 1, 2]
         
     def reset(self):
         self.cooldown_timer = 0
@@ -68,9 +62,6 @@ class EnemySpawner:
         
         # Check if we can spawn a new enemy
         if len(current_enemies) < max_enemies and self.cooldown_timer <= 0:
-            # Reset cooldown, scaled by difficulty (faster spawning at higher difficulty)
-            self.cooldown_timer = max(20, int(self.spawn_cooldown / difficulty))
-            
             # Choose a spawn edge (0: Top, 1: Right, 2: Bottom, 3: Left)
             edge = np.random.randint(0, 4)
             if edge == 0:  # Top
@@ -97,6 +88,10 @@ class EnemySpawner:
             if min_dist < 200.0:
                 return None
                 
+            # Reset cooldown, scaled by difficulty (faster spawning at higher difficulty)
+            # Only reset cooldown if the spawn is valid and successful
+            self.cooldown_timer = max(20, int(self.spawn_cooldown / difficulty))
+            
             # Randomly select enemy type from allowed types only
             enemy_type = self.allowed_types[np.random.randint(0, len(self.allowed_types))]
             new_enemy = Enemy(x, y, enemy_type)

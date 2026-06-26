@@ -1,10 +1,15 @@
 {
-    "learning_rate": 0.00010124137770478625,
-    "gamma": 0.9525224588112494,
-    "net_arch_width": 512,
-    "n_steps": 4096,
-    "batch_size": 128,
-    "ent_coef": 0.0012686721262104854,
+    "learning_rate": 0.00015,
+    "gamma": 0.99,
+    "net_arch_width": 256,
+    "eta": 0.05,
+    "beta": 0.07613762547568977,
+    "lr_icm": 0.0005399484409787432,
+    "R_min": -17.977699765135824,
+    "R_max": -4.043491955427681,
+    "n_steps": 2048,
+    "batch_size": 512,
+    "ent_coef": 0.003,
     "gae_lambda": 0.95,
-    "clip_range": 0.1
+    "clip_range": 0.3
 }

@@ -195,7 +195,7 @@ class PygameRenderer:
                     pygame.draw.circle(self.screen, enemy.color, (ex, ey - leaf_dist), 8)
                     pygame.draw.circle(self.screen, enemy.color, (ex, ey + leaf_dist), 8)
                     pygame.draw.circle(self.screen, (255, 255, 255), (ex, ey), 3)
-                elif enemy.enemy_type == 2:  # Fire: Draw fire embers rising
+                else:  # Fire: Draw fire embers rising
                     if np.random.rand() < 0.2:
                         self.particles.append({
                             "x": enemy.x + np.random.uniform(-10, 10),
@@ -211,22 +211,6 @@ class PygameRenderer:
                     # Inner yellow flame core
                     pygame.draw.circle(self.screen, (255, 200, 0), (ex, ey), r - 5)
                     pygame.draw.circle(self.screen, (255, 255, 255), (ex, ey), 4)
-                else:  # Flying: Draw purple wing triangles
-                    # Wings expansion/contraction based on game frames
-                    wing_offset = int(4 * np.sin(pygame.time.get_ticks() / 100.0))
-                    # Left wing
-                    pygame.draw.polygon(self.screen, enemy.color, [
-                        (ex, ey),
-                        (ex - r - wing_offset, ey - 6),
-                        (ex - 4, ey + 8)
-                    ])
-                    # Right wing
-                    pygame.draw.polygon(self.screen, enemy.color, [
-                        (ex, ey),
-                        (ex + r + wing_offset, ey - 6),
-                        (ex + 4, ey + 8)
-                    ])
-                    pygame.draw.circle(self.screen, (255, 255, 255), (ex, ey), 5)
                 
                 # Enemy Health Bar
                 health_ratio = enemy.health / enemy.max_health
@@ -255,10 +239,9 @@ class PygameRenderer:
                     (0, 120, 255),    # Water (Blue)
                     (50, 220, 50),    # Grass (Green)
                     (255, 50, 50),    # Fire (Red)
-                    (220, 220, 220),  # Wind (White)
                 ]
                 lf_weapon = last_fired_weapon[idx]
-                gun_color = gun_colors[lf_weapon] if (0 <= lf_weapon < 4) else (200, 200, 200)
+                gun_color = gun_colors[lf_weapon] if (0 <= lf_weapon < 3) else (200, 200, 200)
                 
                 # Draw gun barrel
                 gun_end_x = ax_pos + ax * 26
@@ -337,17 +320,16 @@ class PygameRenderer:
                 pygame.draw.rect(self.screen, h_color, (25, hp_bar_y, int(hp_bar_width * (a_hp/max_health)), hp_bar_height), border_radius=4)
             
         # Draw Weapon Selection Interface (bottom left panel)
-        weapon_panel = pygame.Surface((280, 50), pygame.SRCALPHA)
+        weapon_panel = pygame.Surface((215, 50), pygame.SRCALPHA)
         weapon_panel.fill((20, 30, 45, 180))
-        pygame.draw.rect(weapon_panel, (50, 75, 110, 255), (0, 0, 280, 50), width=1, border_radius=8)
+        pygame.draw.rect(weapon_panel, (50, 75, 110, 255), (0, 0, 215, 50), width=1, border_radius=8)
         self.screen.blit(weapon_panel, (15, self.height - 65))
         
         # Draw weapon slots
         weapons_data = [
             ("WATER", (0, 100, 255), "Kills Fire"),
             ("GRASS", (50, 200, 50), "Kills Water"),
-            ("FIRE", (255, 50, 50), "Kills Grass"),
-            ("WIND", (220, 220, 220), "Kills Fly")
+            ("FIRE", (255, 50, 50), "Kills Grass")
         ]
         
         for idx, (w_name, w_color, counter_desc) in enumerate(weapons_data):

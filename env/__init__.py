@@ -17,18 +17,10 @@ register(
     kwargs={"curriculum_level": 2},
 )
 
-# Curriculum Level 3: Full game — all 4 types, max 5
+# Curriculum Level 3: Full game & Cooperative Multi-Agent — 2 agents, Water, Grass, Fire, projectiles, allies
 register(
     id="ElementShooter-v2",
     entry_point="env.game_env:ElementShooterEnv",
     max_episode_steps=3600,
     kwargs={"curriculum_level": 3},
-)
-
-# Curriculum Level 4: Centralized Multi-Agent — 2 agents, all 4 enemy types, projectiles, allies
-register(
-    id="ElementShooter-v3",
-    entry_point="env.game_env:ElementShooterEnv",
-    max_episode_steps=3600,
-    kwargs={"curriculum_level": 4},
 )
