@@ -9,6 +9,7 @@ from stable_baselines3.common.callbacks import EvalCallback
 import env  # Registers ElementShooter-v0
 
 # Optimize PyTorch CPU performance by limiting thread count (prevents core thrashing)
+# This is dynamic now, but defaults to 1 for vector env efficiency
 torch.set_num_threads(1)
 
 class TrialEvalCallback(EvalCallback):
@@ -44,9 +45,40 @@ class TrialEvalCallback(EvalCallback):
                 
         return continue_training
 
-def objective(trial, curiosity=False, env_id="ElementShooter-v0"):
+def make_env_fn(env_id, rank, seed=0, wrapper_class=None, wrapper_kwargs=None):
+    def _init():
+        import env
+        import gymnasium as gym
+        game_env = gym.make(env_id)
+        game_env.reset(seed=seed + rank)
+        if wrapper_class is not None:
+            kwargs = wrapper_kwargs if wrapper_kwargs is not None else {}
+            game_env = wrapper_class(game_env, **kwargs)
+        return game_env
+    return _init
+
+def create_vec_env(env_id, num_envs, vec_env_type="dummy", wrapper_class=None, wrapper_kwargs=None, seed=0):
+    if vec_env_type == "subproc":
+        from stable_baselines3.common.vec_env import SubprocVecEnv
+        return SubprocVecEnv([
+            make_env_fn(env_id, i, seed=seed, wrapper_class=wrapper_class, wrapper_kwargs=wrapper_kwargs)
+            for i in range(num_envs)
+        ])
+    else:
+        from stable_baselines3.common.env_util import make_vec_env
+        return make_vec_env(
+            env_id,
+            n_envs=num_envs,
+            wrapper_class=wrapper_class,
+            wrapper_kwargs=wrapper_kwargs,
+            seed=seed
+        )
+
+def objective(trial, curiosity=False, env_id="ElementShooter-v0", steps_per_trial=300000, num_envs=8, eval_freq_steps=20000, vec_env_type="dummy"):
     """Optuna objective function for hyperparameter tuning using BOHB."""
-    from stable_baselines3.common.env_util import make_vec_env
+    
+    # Optimize PyTorch CPU performance by limiting thread count (prevents core thrashing in subprocesses)
+    torch.set_num_threads(1)
     
     # Common hyperparameters
     learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
@@ -57,8 +89,11 @@ def objective(trial, curiosity=False, env_id="ElementShooter-v0"):
         net_arch=dict(pi=[net_arch_width, net_arch_width], vf=[net_arch_width, net_arch_width])
     )
     
+    wrapper_class = None
+    wrapper_kwargs = None
     if curiosity:
         from env.curiosity import CuriosityWrapper
+        wrapper_class = CuriosityWrapper
         
         # Suggest curiosity-specific parameters
         eta = trial.suggest_float("eta", 1e-4, 0.5, log=True)
@@ -74,14 +109,14 @@ def objective(trial, curiosity=False, env_id="ElementShooter-v0"):
             "R_min": R_min,
             "R_max": R_max
         }
-        game_env = make_vec_env(
-            env_id, 
-            n_envs=8,
-            wrapper_class=CuriosityWrapper,
-            wrapper_kwargs=wrapper_kwargs
-        )
-    else:
-        game_env = make_vec_env(env_id, n_envs=8)
+        
+    game_env = create_vec_env(
+        env_id, 
+        num_envs=num_envs, 
+        vec_env_type=vec_env_type, 
+        wrapper_class=wrapper_class, 
+        wrapper_kwargs=wrapper_kwargs
+    )
     
     # PPO specific parameters
     n_steps = trial.suggest_categorical("n_steps", [1024, 2048, 4096, 8192])
@@ -92,6 +127,7 @@ def objective(trial, curiosity=False, env_id="ElementShooter-v0"):
     
     # Create a clean, single-env evaluation environment (no curiosity wrapper)
     # to measure pure task performance
+    from stable_baselines3.common.env_util import make_vec_env
     eval_env = make_vec_env(env_id, n_envs=1)
     
     # Initialize PPO model
@@ -109,11 +145,7 @@ def objective(trial, curiosity=False, env_id="ElementShooter-v0"):
         verbose=0
     )
     
-    # 100K training steps, evaluate every 10K steps (1250 updates for 8 envs)
-    total_timesteps = 100000
-    eval_freq_steps = 10000
-    n_envs = 8
-    eval_freq = eval_freq_steps // n_envs
+    eval_freq = max(1, eval_freq_steps // num_envs)
     
     eval_callback = TrialEvalCallback(
         eval_env,
@@ -140,7 +172,7 @@ def objective(trial, curiosity=False, env_id="ElementShooter-v0"):
         callbacks.append(curiosity_callback)
     
     try:
-        model.learn(total_timesteps=total_timesteps, callback=callbacks)
+        model.learn(total_timesteps=steps_per_trial, callback=callbacks)
     except optuna.exceptions.TrialPruned:
         eval_env.close()
         game_env.close()
@@ -156,7 +188,13 @@ def objective(trial, curiosity=False, env_id="ElementShooter-v0"):
 
 def main():
     parser = argparse.ArgumentParser(description="Tune PPO hyperparameters using Optuna (BOHB)")
-    parser.add_argument("--trials", type=int, default=20, help="Number of Optuna trials to run")
+    parser.add_argument("--trials", type=int, default=50, help="Number of Optuna trials to run")
+    parser.add_argument("--steps-per-trial", type=int, default=300000, help="Max steps per trial")
+    parser.add_argument("--num-envs", type=int, default=8, help="Number of parallel environments per trial")
+    parser.add_argument("--eval-freq", type=int, default=20000, help="Frequency of evaluation steps")
+    parser.add_argument("--n-jobs", type=int, default=1, help="Number of parallel Optuna trials (use -1 for all CPUs)")
+    parser.add_argument("--vec-env", type=str, default="dummy", choices=["dummy", "subproc"], help="Vector env type (dummy or subproc)")
+    parser.add_argument("--storage", type=str, default="sqlite:///optuna_study.db", help="Optuna storage URI (supports SQLite database)")
     parser.add_argument("--curiosity", action="store_true", help="Enable Intrinsic Curiosity Module (ICM) exploration rewards")
     parser.add_argument("--env-id", type=str, default="ElementShooter-v0", help="Gym env ID (curriculum: v0=easy, v1=medium, v2=full)")
     args = parser.parse_args()
@@ -172,18 +210,31 @@ def main():
     study = optuna.create_study(
         direction="maximize",
         study_name="ppo_element_shooter_tuning",
+        storage=args.storage,
         sampler=sampler,
-        pruner=pruner
+        pruner=pruner,
+        load_if_exists=True
     )
     
     print(f"Starting BOHB PPO hyperparameter tuning ({args.trials} trials) on env '{args.env_id}'...")
     print(f"Curiosity (ICM + Dynamic PBRS) wrapper tuning: {args.curiosity}")
-    print("Each trial trains for up to 100K steps, evaluating every 10K steps over 5 episodes.\n")
+    print(f"Config: {args.steps_per_trial} steps per trial, evaluating every {args.eval_freq} steps.")
+    print(f"Parallelism: {args.n_jobs} parallel trials, {args.num_envs} vector environments per trial ({args.vec_env}).")
+    print(f"Optuna Database: {args.storage}\n")
     
     study.optimize(
-        lambda trial: objective(trial, curiosity=args.curiosity, env_id=args.env_id),
+        lambda trial: objective(
+            trial, 
+            curiosity=args.curiosity, 
+            env_id=args.env_id,
+            steps_per_trial=args.steps_per_trial,
+            num_envs=args.num_envs,
+            eval_freq_steps=args.eval_freq,
+            vec_env_type=args.vec_env
+        ),
         n_trials=args.trials,
-        show_progress_bar=True
+        n_jobs=args.n_jobs,
+        show_progress_bar=(args.n_jobs == 1) # Progress bar is disabled for multi-job tuning
     )
     
     # Print results

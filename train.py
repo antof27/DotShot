@@ -8,6 +8,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 import env  # Registers ElementShooter-v0
 
 # Optimize PyTorch CPU performance by limiting thread count (prevents core thrashing)
+# Defaults to 1 for vector env efficiency, but customizable via CLI
 torch.set_num_threads(1)
 
 def load_best_hyperparams(json_path=None):
@@ -32,6 +33,35 @@ def cosine_annealing_schedule(initial_value: float, min_value: float = 1e-6):
         return min_value + 0.5 * (initial_value - min_value) * (1.0 + cos_out)
     return func
 
+def make_env_fn(env_id, rank, seed=0, wrapper_class=None, wrapper_kwargs=None):
+    def _init():
+        import env
+        import gymnasium as gym
+        game_env = gym.make(env_id)
+        game_env.reset(seed=seed + rank)
+        if wrapper_class is not None:
+            kwargs = wrapper_kwargs if wrapper_kwargs is not None else {}
+            game_env = wrapper_class(game_env, **kwargs)
+        return game_env
+    return _init
+
+def create_vec_env(env_id, num_envs, vec_env_type="dummy", wrapper_class=None, wrapper_kwargs=None, seed=0):
+    if vec_env_type == "subproc":
+        from stable_baselines3.common.vec_env import SubprocVecEnv
+        return SubprocVecEnv([
+            make_env_fn(env_id, i, seed=seed, wrapper_class=wrapper_class, wrapper_kwargs=wrapper_kwargs)
+            for i in range(num_envs)
+        ])
+    else:
+        from stable_baselines3.common.env_util import make_vec_env
+        return make_vec_env(
+            env_id,
+            n_envs=num_envs,
+            wrapper_class=wrapper_class,
+            wrapper_kwargs=wrapper_kwargs,
+            seed=seed
+        )
+
 def main():
     parser = argparse.ArgumentParser(description="Train a PPO agent on the Element Shooter environment")
     parser.add_argument("--steps", type=int, default=1000000, help="Total timesteps to train")
@@ -40,8 +70,13 @@ def main():
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint model (.zip) to resume training from")
     parser.add_argument("--curiosity", action="store_true", help="Enable Intrinsic Curiosity Module (ICM) exploration rewards")
     parser.add_argument("--num-envs", type=int, default=8, help="Number of parallel environments to run (default: 8)")
+    parser.add_argument("--vec-env", type=str, default="dummy", choices=["dummy", "subproc"], help="Vector env type (dummy or subproc)")
+    parser.add_argument("--torch-threads", type=int, default=1, help="PyTorch CPU thread count limit (default: 1)")
     parser.add_argument("--env-id", type=str, default="ElementShooter-v0", help="Gym env ID (curriculum: v0=easy, v1=medium, v2=full)")
     args = parser.parse_args()
+    
+    # Configure PyTorch CPU thread count
+    torch.set_num_threads(args.torch_threads)
     
     # 1. Setup folders
     os.makedirs(args.save_dir, exist_ok=True)
@@ -50,12 +85,14 @@ def main():
     tuned_params = load_best_hyperparams()
 
     # 3. Create environment
-    from stable_baselines3.common.env_util import make_vec_env
     env_id = args.env_id
-    print(f"Initializing {args.num_envs} parallel '{env_id}' environments...")
+    print(f"Initializing {args.num_envs} parallel '{env_id}' environments ({args.vec_env})...")
     
+    wrapper_class = None
+    wrapper_kwargs = None
     if args.curiosity:
         from env.curiosity import CuriosityWrapper
+        wrapper_class = CuriosityWrapper
         
         # Load tuned curiosity parameters or use default values
         eta = tuned_params.get("eta", 0.1)
@@ -75,14 +112,13 @@ def main():
             "R_max": R_max
         }
         
-        game_env = make_vec_env(
-            env_id, 
-            n_envs=args.num_envs,
-            wrapper_class=CuriosityWrapper,
-            wrapper_kwargs=wrapper_kwargs
-        )
-    else:
-        game_env = make_vec_env(env_id, n_envs=args.num_envs)
+    game_env = create_vec_env(
+        env_id, 
+        num_envs=args.num_envs, 
+        vec_env_type=args.vec_env, 
+        wrapper_class=wrapper_class, 
+        wrapper_kwargs=wrapper_kwargs
+    )
         
     # 4. Load checkpoint or initialize new model
     prefix = "ppo_element_shooter"
