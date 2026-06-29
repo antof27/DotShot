@@ -8,7 +8,7 @@ except ImportError:
     calculate_reward = None
 
 class Bullet:
-    def __init__(self, x, y, dx, dy, bullet_type):
+    def __init__(self, x, y, dx, dy, bullet_type, target_uid=None):
         self.x = x
         self.y = y
         self.dx = dx
@@ -18,6 +18,7 @@ class Bullet:
         self.radius = 5.0
         self.active = True
         self.well_aimed = False
+        self.target_uid = target_uid  # UID of enemy this bullet was aimed at (for in-flight cap)
         
         if bullet_type == 0:
             self.color = (0, 100, 255)
@@ -184,9 +185,10 @@ class ElementShooterEnv(gym.Env):
         
         # Observation space size:
         # Agent status: [x, y, vel_x, vel_y, health, cooldown, last_fired_weapon_one_hot (3)] -> 9 features
-        # 5 Closest enemies: 5 * [rel_x, rel_y, sin_angle, cos_angle, distance, health, type_one_hot (3), correct_weapon_hint, active_flag] -> 5 * 11 = 55 features
-        # Total = 64 features per agent
-        obs_size = (9 + (self.max_enemies_tracked * 11)) * self.num_agents
+        # 3 Closest hostiles: 3 * [rel_x, rel_y, sin_angle, cos_angle, distance, health, type_one_hot (3), correct_weapon_hint, active_flag, vel_x, vel_y] -> 3 * 13 = 39 features
+        # 2 Closest allies:   2 * [rel_x, rel_y, sin_angle, cos_angle, distance, health, type_one_hot (3), correct_weapon_hint, active_flag] -> 2 * 11 = 22 features
+        # Total = 9 + 39 + 22 = 70 features per agent
+        obs_size = ((9 + (3 * 13) + (2 * 11))) * self.num_agents
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0, shape=(obs_size,), dtype=np.float32
         )
@@ -340,7 +342,7 @@ class ElementShooterEnv(gym.Env):
         # Build enemy observation vector (3 closest hostiles, 2 closest allies)
         enemy_obs = []
         
-        # 3 Closest Hostiles (3 * 11 = 33 features)
+        # 3 Closest Hostiles (3 * 13 = 39 features; +vel_x, vel_y for interception)
         for i in range(3):
             if i < len(hostiles_info):
                 dist, dx, dy, enemy = hostiles_info[i]
@@ -358,6 +360,11 @@ class ElementShooterEnv(gym.Env):
                 correct_weapon = self.enemy_weakness.get(enemy.enemy_type, 0)
                 weapon_hint = correct_weapon / 2.0
                 
+                # Normalised enemy velocity for interception aiming
+                max_enemy_speed = 3.0  # approx max speed any enemy type can have
+                norm_vx = np.clip(enemy.vx / max_enemy_speed, -1.0, 1.0)
+                norm_vy = np.clip(enemy.vy / max_enemy_speed, -1.0, 1.0)
+                
                 enemy_obs.extend([
                     rel_x,
                     rel_y,
@@ -369,10 +376,12 @@ class ElementShooterEnv(gym.Env):
                     type_one_hot[1],
                     type_one_hot[2],
                     weapon_hint,
-                    1.0  # active flag
+                    1.0,        # active flag
+                    norm_vx,    # enemy velocity x (for interception)
+                    norm_vy,    # enemy velocity y (for interception)
                 ])
             else:
-                enemy_obs.extend([0.0] * 11)
+                enemy_obs.extend([0.0] * 13)
                 
         # 2 Closest Allies (2 * 11 = 22 features)
         for i in range(2):
@@ -514,6 +523,7 @@ class ElementShooterEnv(gym.Env):
             
             # Calculate alignment with closest hostile enemy (for continuous aiming reward)
             enemy_alignment = 0.0
+            closest_target = None
             active_enemies = [e for e in self.enemies if e.alive and not getattr(e, 'is_ally', False)]
             if active_enemies:
                 closest_target = min(active_enemies, key=lambda e: np.sqrt((e.x - self.agent_x[idx])**2 + (e.y - self.agent_y[idx])**2))
@@ -551,26 +561,33 @@ class ElementShooterEnv(gym.Env):
             self.shoot_cooldown[idx] = max(0, self.shoot_cooldown[idx] - 1)
             
             if shoot_triggered and self.shoot_cooldown[idx] <= 0:
-                # Normalize aim direction
-                aim_len = np.sqrt(aim_x**2 + aim_y**2)
-                if aim_len > 0.1:
-                    bullet_dx = aim_x / aim_len
-                    bullet_dy = aim_y / aim_len
-                else:
-                    move_len = np.sqrt(move_x**2 + move_y**2)
-                    if move_len > 0.1:
-                        bullet_dx = move_x / move_len
-                        bullet_dy = move_y / move_len
-                    else:
-                        bullet_dx = 1.0
-                        bullet_dy = 0.0
+                # --- Bullets-in-flight cap: don't fire again at a target that already has a bullet heading toward it ---
+                target_uid = closest_target.uid if closest_target is not None else None
+                already_targeted = target_uid is not None and any(
+                    b.active and b.target_uid == target_uid for b in self.bullets
+                )
                 
-                new_bullet = Bullet(self.agent_x[idx], self.agent_y[idx], bullet_dx, bullet_dy, fired_weapon_type)
-                new_bullet.well_aimed = (enemy_alignment > 0.96)
-                self.bullets.append(new_bullet)
-                bullets_fired += 1
-                self.shoot_cooldown[idx] = self.shoot_cooldown_max
-                self.last_fired_weapon[idx] = fired_weapon_type
+                if not already_targeted:
+                    # Normalize aim direction
+                    aim_len = np.sqrt(aim_x**2 + aim_y**2)
+                    if aim_len > 0.1:
+                        bullet_dx = aim_x / aim_len
+                        bullet_dy = aim_y / aim_len
+                    else:
+                        move_len = np.sqrt(move_x**2 + move_y**2)
+                        if move_len > 0.1:
+                            bullet_dx = move_x / move_len
+                            bullet_dy = move_y / move_len
+                        else:
+                            bullet_dx = 1.0
+                            bullet_dy = 0.0
+                    
+                    new_bullet = Bullet(self.agent_x[idx], self.agent_y[idx], bullet_dx, bullet_dy, fired_weapon_type, target_uid=target_uid)
+                    new_bullet.well_aimed = (enemy_alignment > 0.96)
+                    self.bullets.append(new_bullet)
+                    bullets_fired += 1
+                    self.shoot_cooldown[idx] = self.shoot_cooldown_max
+                    self.last_fired_weapon[idx] = fired_weapon_type
             else:
                 # Trigger discipline: reward NOT shooting when poorly aligned
                 # Only counts when enemies exist and cooldown is ready (agent COULD shoot but chose not to)

@@ -1,7 +1,12 @@
 import numpy as np
 
+_enemy_id_counter = 0  # Global counter for unique enemy IDs
+
 class Enemy:
     def __init__(self, x, y, enemy_type):
+        global _enemy_id_counter
+        _enemy_id_counter += 1
+        self.uid = _enemy_id_counter  # Unique ID for bullet-tracking
         self.x = x
         self.y = y
         self.enemy_type = enemy_type  # 0: Water, 1: Grass, 2: Fire, 3: Flying
@@ -29,6 +34,8 @@ class Enemy:
             
         self.health = self.max_health
         self.alive = True
+        self.vx = 0.0  # Current velocity x (updated each step, used for interception obs)
+        self.vy = 0.0  # Current velocity y
 
     def take_damage(self, amount):
         self.health -= amount
@@ -43,8 +50,13 @@ class Enemy:
         dist = np.sqrt(dx**2 + dy**2)
         
         if dist > 0:
-            self.x += (dx / dist) * self.speed
-            self.y += (dy / dist) * self.speed
+            self.vx = (dx / dist) * self.speed
+            self.vy = (dy / dist) * self.speed
+            self.x += self.vx
+            self.y += self.vy
+        else:
+            self.vx = 0.0
+            self.vy = 0.0
 
 class EnemySpawner:
     def __init__(self, width=800, height=800, spawn_cooldown=60, allowed_types=None):
