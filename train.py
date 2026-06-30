@@ -73,8 +73,9 @@ def main():
         eta = tuned_params.get("eta", 0.1)
         beta = tuned_params.get("beta", 0.2)
         lr_icm = tuned_params.get("lr_icm", 1e-4)
-        R_min = tuned_params.get("R_min", -150.0)
-        R_max = tuned_params.get("R_max", -40.0)
+        # Default to None to enable running min/max auto-tracking in CuriosityWrapper
+        R_min = tuned_params.get("R_min", None)
+        R_max = tuned_params.get("R_max", None)
         
         print("Wrapping environments with Intrinsic Curiosity Module (ICM)...")
         print(f"  eta: {eta}, beta: {beta}, lr_icm: {lr_icm}, R_min: {R_min}, R_max: {R_max}")

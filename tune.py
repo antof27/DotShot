@@ -69,19 +69,17 @@ def objective(trial, curiosity=False, env_id="DotShot-Level1-v0", steps_per_tria
         from env.curiosity import CuriosityWrapper
         wrapper_class = CuriosityWrapper
         
-        # Suggest curiosity-specific parameters
+        # Suggest curiosity-specific parameters (R_min/R_max are auto-tracked dynamically)
         eta = trial.suggest_float("eta", 1e-4, 0.5, log=True)
         beta = trial.suggest_float("beta", 0.05, 0.5)
         lr_icm = trial.suggest_float("lr_icm", 1e-5, 1e-3, log=True)
-        R_min = trial.suggest_float("R_min", -30.0, -10.0)
-        R_max = trial.suggest_float("R_max", -9.0, -2.0)
         
         wrapper_kwargs = {
             "eta": eta,
             "beta": beta,
             "lr": lr_icm,
-            "R_min": R_min,
-            "R_max": R_max
+            "R_min": None,
+            "R_max": None
         }
         
     game_env = create_vec_env(

@@ -48,7 +48,7 @@ class IntrinsicCuriosityModule(nn.Module):
 
 
 class CuriosityWrapper(gym.Wrapper):
-    def __init__(self, env, eta=0.1, beta=0.2, lr=1e-4, R_min=-150.0, R_max=-40.0):
+    def __init__(self, env, eta=0.1, beta=0.2, lr=1e-4, R_min=None, R_max=None):
         """
         Gymnasium Environment Wrapper that implements Dynamic Potential-Based Reward Shaping (PBRS)
         combining aim alignment and kiting distance.
@@ -62,6 +62,10 @@ class CuriosityWrapper(gym.Wrapper):
         self.R_min = R_min
         self.R_max = R_max
         
+        # Initialize running rewards for auto-scaling
+        self.running_min_rew = R_min
+        self.running_max_rew = R_max
+        
         # PBRS parameters
         self.num_agents = getattr(self.env.unwrapped, "num_agents", 1)
         self.prev_potential = [0.0] * self.num_agents
@@ -69,6 +73,22 @@ class CuriosityWrapper(gym.Wrapper):
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         self.prev_potential = [0.0] * self.num_agents
+        
+        # Dynamic scaling: auto-track bounds if R_min or R_max is None
+        unwrapped = self.env.unwrapped
+        mean_rew = getattr(unwrapped, "mean_episode_reward", 0.0)
+        
+        if self.R_min is None:
+            if self.running_min_rew is None:
+                self.running_min_rew = mean_rew
+            else:
+                self.running_min_rew = min(self.running_min_rew, mean_rew)
+        if self.R_max is None:
+            if self.running_max_rew is None:
+                self.running_max_rew = mean_rew
+            else:
+                self.running_max_rew = max(self.running_max_rew, mean_rew)
+                
         return obs, info
         
     def step(self, action):
@@ -80,13 +100,15 @@ class CuriosityWrapper(gym.Wrapper):
         
         # Dynamic scaling factor based on rolling average episode reward
         mean_rew = getattr(unwrapped, "mean_episode_reward", 0.0)
-        R_min = self.R_min
-        R_max = self.R_max
         
-        if abs(R_max - R_min) < 1e-5:
+        # Use running bounds if fixed bounds are not provided
+        r_min = self.running_min_rew if self.R_min is None else self.R_min
+        r_max = self.running_max_rew if self.R_max is None else self.R_max
+        
+        if r_min is None or r_max is None or abs(r_max - r_min) < 1e-5:
             k = 0.0
         else:
-            k = np.clip((mean_rew - R_min) / (R_max - R_min), 0.0, 1.0)
+            k = np.clip((mean_rew - r_min) / (r_max - r_min), 0.0, 1.0)
         shaping_scale = 0.5 * (1.0 - 0.8 * k)  # Scales from 0.5 (struggling) to 0.1 (mastered)
         
         pbrs_reward = 0.0
