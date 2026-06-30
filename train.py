@@ -37,8 +37,11 @@ def make_env_fn(env_id, rank, seed=0, wrapper_class=None, wrapper_kwargs=None):
     def _init():
         import env
         import gymnasium as gym
+        from stable_baselines3.common.monitor import Monitor
         game_env = gym.make(env_id)
         game_env.reset(seed=seed + rank)
+        # Wrap with Monitor to support SB3 statistics logging (resolves user warning)
+        game_env = Monitor(game_env)
         if wrapper_class is not None:
             kwargs = wrapper_kwargs if wrapper_kwargs is not None else {}
             game_env = wrapper_class(game_env, **kwargs)

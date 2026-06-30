@@ -49,8 +49,11 @@ def make_env_fn(env_id, rank, seed=0, wrapper_class=None, wrapper_kwargs=None):
     def _init():
         import env
         import gymnasium as gym
+        from stable_baselines3.common.monitor import Monitor
         game_env = gym.make(env_id)
         game_env.reset(seed=seed + rank)
+        # Wrap with Monitor to support SB3 statistics logging (resolves user warning)
+        game_env = Monitor(game_env)
         if wrapper_class is not None:
             kwargs = wrapper_kwargs if wrapper_kwargs is not None else {}
             game_env = wrapper_class(game_env, **kwargs)
@@ -126,9 +129,8 @@ def objective(trial, curiosity=False, env_id="ElementShooter-v0", steps_per_tria
     clip_range = trial.suggest_categorical("clip_range", [0.1, 0.2, 0.3])
     
     # Create a clean, single-env evaluation environment (no curiosity wrapper)
-    # to measure pure task performance
-    from stable_baselines3.common.env_util import make_vec_env
-    eval_env = make_vec_env(env_id, n_envs=1)
+    # to measure pure task performance, matching the vec_env_type to avoid warnings
+    eval_env = create_vec_env(env_id, num_envs=1, vec_env_type=vec_env_type)
     
     # Initialize PPO model
     model = PPO(
