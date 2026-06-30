@@ -46,6 +46,7 @@ def main():
     parser.add_argument("--num-envs", type=int, default=8, help="Number of parallel environments to run (default: 8)")
     parser.add_argument("--vec-env", type=str, default="dummy", choices=["dummy", "subproc"], help="Vector env type (dummy or subproc)")
     parser.add_argument("--torch-threads", type=int, default=1, help="PyTorch CPU thread count limit (default: 1)")
+    parser.add_argument("--device", type=str, default="cpu", choices=["auto", "cpu", "cuda"], help="Device to run PyTorch models on (default: cpu)")
     parser.add_argument("--env-id", type=str, default="ElementShooter-v0", help="Gym env ID (curriculum: v0=easy, v1=medium, v2=full)")
     args = parser.parse_args()
     
@@ -122,7 +123,7 @@ def main():
             
             print("Note: Network architecture (net_arch) cannot be changed when resuming a checkpoint.")
             
-        model = PPO.load(checkpoint_path, env=game_env, custom_objects=custom_objects)
+        model = PPO.load(checkpoint_path, env=game_env, custom_objects=custom_objects, device=args.device)
         # Ensure tensorboard logging path is preserved
         model.tensorboard_log = args.tb_log
     else:
@@ -164,6 +165,7 @@ def main():
             clip_range=clip_range,
             policy_kwargs=policy_kwargs,
             tensorboard_log=args.tb_log,
+            device=args.device,
             verbose=1
         )
     
@@ -185,10 +187,11 @@ def main():
             action_dim=action_dim,
             eta=eta,
             beta=beta,
-            lr=lr_icm
+            lr=lr_icm,
+            device=args.device
         )
         callbacks.append(curiosity_callback)
-        print("Centralized Intrinsic Curiosity Module (ICM) Callback registered.")
+        print(f"Centralized Intrinsic Curiosity Module (ICM) Callback registered (running on {args.device}).")
     
     # 6. Learn
     print(f"Starting PPO training for {args.steps} steps...")

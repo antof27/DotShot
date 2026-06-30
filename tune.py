@@ -48,7 +48,7 @@ class TrialEvalCallback(EvalCallback):
 
 
 
-def objective(trial, curiosity=False, env_id="ElementShooter-v0", steps_per_trial=300000, num_envs=8, eval_freq_steps=20000, vec_env_type="dummy"):
+def objective(trial, curiosity=False, env_id="ElementShooter-v0", steps_per_trial=300000, num_envs=8, eval_freq_steps=20000, vec_env_type="dummy", device="cpu"):
     """Optuna objective function for hyperparameter tuning using BOHB."""
     
     # Optimize PyTorch CPU performance by limiting thread count (prevents core thrashing in subprocesses)
@@ -115,6 +115,7 @@ def objective(trial, curiosity=False, env_id="ElementShooter-v0", steps_per_tria
         gae_lambda=gae_lambda,
         clip_range=clip_range,
         policy_kwargs=policy_kwargs,
+        device=device,
         verbose=0
     )
     
@@ -140,7 +141,8 @@ def objective(trial, curiosity=False, env_id="ElementShooter-v0", steps_per_tria
             action_dim=action_dim,
             eta=eta,
             beta=beta,
-            lr=lr_icm
+            lr=lr_icm,
+            device=device
         )
         callbacks.append(curiosity_callback)
     
@@ -167,6 +169,7 @@ def main():
     parser.add_argument("--eval-freq", type=int, default=20000, help="Frequency of evaluation steps")
     parser.add_argument("--n-jobs", type=int, default=1, help="Number of parallel Optuna trials (use -1 for all CPUs)")
     parser.add_argument("--vec-env", type=str, default="dummy", choices=["dummy", "subproc"], help="Vector env type (dummy or subproc)")
+    parser.add_argument("--device", type=str, default="cpu", choices=["auto", "cpu", "cuda"], help="Device to run PyTorch models on (default: cpu)")
     parser.add_argument("--storage", type=str, default="sqlite:///optuna_study.db", help="Optuna storage URI (supports SQLite database)")
     parser.add_argument("--curiosity", action="store_true", help="Enable Intrinsic Curiosity Module (ICM) exploration rewards")
     parser.add_argument("--env-id", type=str, default="ElementShooter-v0", help="Gym env ID (curriculum: v0=easy, v1=medium, v2=full)")
@@ -203,7 +206,8 @@ def main():
             steps_per_trial=args.steps_per_trial,
             num_envs=args.num_envs,
             eval_freq_steps=args.eval_freq,
-            vec_env_type=args.vec_env
+            vec_env_type=args.vec_env,
+            device=args.device
         ),
         n_trials=args.trials,
         n_jobs=args.n_jobs,

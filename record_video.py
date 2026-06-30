@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--fps", type=int, default=60, help="Video frame rate (default: 60)")
     parser.add_argument("--deterministic", action="store_true", default=True, help="Use deterministic actions (default: True)")
     parser.add_argument("--no-deterministic", action="store_false", dest="deterministic", help="Use stochastic actions")
+    parser.add_argument("--device", type=str, default="cpu", choices=["auto", "cpu", "cuda"], help="Device to run PPO model inference on (default: cpu)")
     args = parser.parse_args()
 
     model_path = args.model
@@ -25,8 +26,8 @@ def main():
         print(f"Error: Model not found at {model_path}")
         return
 
-    print(f"Loading PPO model from {model_path}...")
-    model = PPO.load(model_path)
+    print(f"Loading PPO model from {model_path} on device {args.device}...")
+    model = PPO.load(model_path, device=args.device)
 
     print(f"Initializing {args.env_id} with rgb_array render mode...")
     game_env = gym.make(args.env_id, render_mode="rgb_array")
