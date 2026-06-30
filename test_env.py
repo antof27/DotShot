@@ -1,6 +1,6 @@
 import gymnasium as gym
 import numpy as np
-import env  # Registers ElementShooter-v0, v1, v2
+import env  # Registers DotShot levels
 
 def test_env(env_id, expected_obs_size=65):
     print(f"\n================ TESTING {env_id} ================")
@@ -49,12 +49,12 @@ def test_env(env_id, expected_obs_size=65):
 
 def main():
     results = []
-    for env_id in ["ElementShooter-v0", "ElementShooter-v1"]:
-        ok = test_env(env_id, expected_obs_size=64)
+    for env_id in ["DotShot-Level1-v0", "DotShot-Level2-v0"]:
+        ok = test_env(env_id, expected_obs_size=70)
         results.append((env_id, ok))
         
-    ok_v2 = test_env("ElementShooter-v2", expected_obs_size=128)
-    results.append(("ElementShooter-v2", ok_v2))
+    ok_v2 = test_env("DotShot-Level3-v0", expected_obs_size=140)
+    results.append(("DotShot-Level3-v0", ok_v2))
     
     print("\n================ SUMMARY ================")
     all_ok = True

@@ -85,7 +85,7 @@ python3 train.py [options]
 - `--vec-env {dummy,subproc}`: Use `subproc` to run environments in parallel child processes for a **4x to 8x speedup**.
 - `--torch-threads <int>`: Set PyTorch CPU thread limit to prevent core thrashing (default: `1`)
 - `--curiosity`: Train with Intrinsic Curiosity Module (ICM) exploration rewards
-- `--env-id <str>`: Gymnasium level: `ElementShooter-v0` (easy), `ElementShooter-v1` (medium), `ElementShooter-v2` (full 2-agent co-op)
+- `--env-id <str>`: Gymnasium level: `DotShot-Level1-v0` (easy), `DotShot-Level2-v0` (medium), `DotShot-Level3-v0` (full 2-agent co-op)
 - `--resume <path>`: Resume training from a saved checkpoint ZIP
 
 Monitor training real-time in TensorBoard:
@@ -98,7 +98,7 @@ tensorboard --logdir=./tb_log
 ### 3. Evaluate & Watch the Agent (`enjoy.py`)
 To watch a trained policy play:
 ```bash
-python3 enjoy.py --env-id ElementShooter-v0
+python3 enjoy.py --env-id DotShot-Level1-v0
 ```
 
 ---
@@ -110,7 +110,7 @@ python3 record_video.py [options]
 ```
 #### Options:
 - `--model <path>`: Path to the trained model `.zip` (default: `./models/ppo_element_shooter_final`)
-- `--env-id <str>`: Gym env ID (default: `ElementShooter-v0`)
+- `--env-id <str>`: Gym env ID (default: `DotShot-Level1-v0`)
 - `--output <path>`: Output video filename (default: `agent_gameplay.mp4`)
 - `--steps <int>`: Maximum steps to record (default: `3600`)
 - `--fps <int>`: Video frame rate (default: `60`)

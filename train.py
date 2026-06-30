@@ -47,7 +47,7 @@ def main():
     parser.add_argument("--vec-env", type=str, default="dummy", choices=["dummy", "subproc"], help="Vector env type (dummy or subproc)")
     parser.add_argument("--torch-threads", type=int, default=1, help="PyTorch CPU thread count limit (default: 1)")
     parser.add_argument("--device", type=str, default="cpu", choices=["auto", "cpu", "cuda"], help="Device to run PyTorch models on (default: cpu)")
-    parser.add_argument("--env-id", type=str, default="ElementShooter-v0", help="Gym env ID (curriculum: v0=easy, v1=medium, v2=full)")
+    parser.add_argument("--env-id", type=str, default="DotShot-Level1-v0", help="Gym env ID (DotShot-Level1-v0, Level2-v0, or Level3-v0)")
     args = parser.parse_args()
     
     # Configure PyTorch CPU thread count

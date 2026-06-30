@@ -48,7 +48,7 @@ class TrialEvalCallback(EvalCallback):
 
 
 
-def objective(trial, curiosity=False, env_id="ElementShooter-v0", steps_per_trial=300000, num_envs=8, eval_freq_steps=20000, vec_env_type="dummy", device="cpu"):
+def objective(trial, curiosity=False, env_id="DotShot-Level1-v0", steps_per_trial=300000, num_envs=8, eval_freq_steps=20000, vec_env_type="dummy", device="cpu"):
     """Optuna objective function for hyperparameter tuning using BOHB."""
     
     # Optimize PyTorch CPU performance by limiting thread count (prevents core thrashing in subprocesses)
@@ -172,7 +172,7 @@ def main():
     parser.add_argument("--device", type=str, default="cpu", choices=["auto", "cpu", "cuda"], help="Device to run PyTorch models on (default: cpu)")
     parser.add_argument("--storage", type=str, default="sqlite:///optuna_study.db", help="Optuna storage URI (supports SQLite database)")
     parser.add_argument("--curiosity", action="store_true", help="Enable Intrinsic Curiosity Module (ICM) exploration rewards")
-    parser.add_argument("--env-id", type=str, default="ElementShooter-v0", help="Gym env ID (curriculum: v0=easy, v1=medium, v2=full)")
+    parser.add_argument("--env-id", type=str, default="DotShot-Level1-v0", help="Gym env ID (DotShot-Level1-v0, Level2-v0, or Level3-v0)")
     args = parser.parse_args()
     
     # BOHB Setup: TPESampler (Bayesian) + HyperbandPruner (early stopping)

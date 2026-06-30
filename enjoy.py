@@ -3,9 +3,9 @@ import argparse
 import gymnasium as gym
 import numpy as np
 import pygame
-import env  # Registers ElementShooter-v0
+import env  # Registers ElementShooter levels
 
-def play_manual(env_id="ElementShooter-v0"):
+def play_manual(env_id="DotShot-Level1-v0"):
     """Lets the user play the game manually using WASD and Mouse."""
     print("\n================ MANUAL PLAY MODE ================")
     print("Controls:")
@@ -111,7 +111,7 @@ def play_manual(env_id="ElementShooter-v0"):
     finally:
         game_env.close()
 
-def play_agent(model_path, env_id="ElementShooter-v0"):
+def play_agent(model_path, env_id="DotShot-Level1-v0"):
     """Run a trained PPO agent in the environment with visualization."""
     from stable_baselines3 import PPO
     
@@ -156,7 +156,7 @@ def main():
     parser = argparse.ArgumentParser(description="Play or evaluate Element Shooter")
     parser.add_argument("--model", type=str, default="./models/ppo_element_shooter_final", help="Path to trained model")
     parser.add_argument("--manual", action="store_true", help="Play the game manually instead of using an agent")
-    parser.add_argument("--env-id", type=str, default="ElementShooter-v0", help="Gym env ID (curriculum: v0=easy, v1=medium, v2=full)")
+    parser.add_argument("--env-id", type=str, default="DotShot-Level1-v0", help="Gym env ID (DotShot-Level1-v0, Level2-v0, or Level3-v0)")
     args = parser.parse_args()
     
     if args.manual:

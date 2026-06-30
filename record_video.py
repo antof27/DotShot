@@ -9,7 +9,7 @@ import env
 def main():
     parser = argparse.ArgumentParser(description="Record a video of a trained PPO agent playing Element Shooter")
     parser.add_argument("--model", type=str, default="./models/ppo_element_shooter_final", help="Path to trained PPO model (.zip)")
-    parser.add_argument("--env-id", type=str, default="ElementShooter-v0", help="Gym env ID (ElementShooter-v0, v1, or v2)")
+    parser.add_argument("--env-id", type=str, default="DotShot-Level1-v0", help="Gym env ID (DotShot-Level1-v0, Level2-v0, or Level3-v0)")
     parser.add_argument("--output", type=str, default="agent_gameplay.mp4", help="Output MP4 video path")
     parser.add_argument("--steps", type=int, default=3600, help="Maximum steps to record (default: 3600)")
     parser.add_argument("--fps", type=int, default=60, help="Video frame rate (default: 60)")

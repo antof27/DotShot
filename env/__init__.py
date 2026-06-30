@@ -3,7 +3,7 @@ from env.game_env import ElementShooterEnv
 
 # Curriculum Level 1: Easy — Fire enemies only, max 2
 register(
-    id="ElementShooter-v0",
+    id="DotShot-Level1-v0",
     entry_point="env.game_env:ElementShooterEnv",
     max_episode_steps=3600,
     kwargs={"curriculum_level": 1},
@@ -11,7 +11,7 @@ register(
 
 # Curriculum Level 2: Medium — Water + Fire enemies, max 3
 register(
-    id="ElementShooter-v1",
+    id="DotShot-Level2-v0",
     entry_point="env.game_env:ElementShooterEnv",
     max_episode_steps=3600,
     kwargs={"curriculum_level": 2},
@@ -19,7 +19,7 @@ register(
 
 # Curriculum Level 3: Full game & Cooperative Multi-Agent — 2 agents, Water, Grass, Fire, projectiles, allies
 register(
-    id="ElementShooter-v2",
+    id="DotShot-Level3-v0",
     entry_point="env.game_env:ElementShooterEnv",
     max_episode_steps=3600,
     kwargs={"curriculum_level": 3},
