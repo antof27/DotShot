@@ -171,7 +171,8 @@ def play_agent(model_path, env_id="DotShot-Level1-v0"):
             # Predict actions using the loaded model
             if is_marl:
                 # Reshape observation to individual agent dimensions: [1, num_agents, obs_dim]
-                obs_n = torch.tensor(obs, dtype=torch.float32).view(1, 2, obs_dim)
+                num_agents = 2 if env_id == "DotShot-Level3-v0" else 1
+                obs_n = torch.tensor(obs, dtype=torch.float32).view(1, num_agents, obs_dim)
                 with torch.no_grad():
                     actions_n, _ = policy.select_actions(obs_n, deterministic=True)
                     

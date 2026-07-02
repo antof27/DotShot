@@ -89,6 +89,8 @@ def train():
     parser.add_argument("--device", type=str, default="cpu", choices=["auto", "cpu", "cuda"], help="Device to run model on")
     parser.add_argument("--save-dir", type=str, default="./models_marl", help="Directory to save MARL policy checkpoints")
     parser.add_argument("--vec-env", type=str, default="subproc", choices=["dummy", "subproc"], help="Vector environment type")
+    parser.add_argument("--env-id", type=str, default="DotShot-Level3-v0", choices=["DotShot-Level1-v0", "DotShot-Level2-v0", "DotShot-Level3-v0"], help="Gym environment ID")
+    parser.add_argument("--resume", type=str, default=None, help="Path to custom MARL checkpoint (.pt) to resume training from")
     args = parser.parse_args()
 
     # Create Save Directory
@@ -101,9 +103,9 @@ def train():
         device = torch.device(args.device)
     print(f"Using device: {device}")
 
-    # 2. Environment Setup (Hardcoded to Cooperative Level 3 for MARL)
-    env_id = "DotShot-Level3-v0"
-    num_agents = 2
+    # 2. Environment Setup
+    env_id = args.env_id
+    num_agents = 2 if env_id == "DotShot-Level3-v0" else 1
     obs_dim = 70
     action_dim = 2304  # 3 * 3 * 64 * 4 joint actions representation
     global_state_dim = num_agents * obs_dim
@@ -127,6 +129,20 @@ def train():
     ).to(device)
     
     optimizer = optim.Adam(policy.parameters(), lr=args.lr, eps=1e-5)
+    
+    # Load checkpoint if resuming
+    if args.resume:
+        print(f"Loading checkpoint state from {args.resume}...")
+        checkpoint = torch.load(args.resume, map_location=device)
+        policy.load_state_dict(checkpoint["state_dict"])
+        if "optimizer_state_dict" in checkpoint:
+            # Only load optimizer state if model is resumed on the same architecture/level
+            try:
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                print("  Optimizer state restored successfully.")
+            except Exception as e:
+                print(f"  Warning: Could not restore optimizer state ({e}). Re-initializing optimizer.")
+                
     buffer = MARLBuffer(args.n_steps, args.num_envs, num_agents, obs_dim, global_state_dim, device)
 
     # 4. Starting Environment Rollouts
