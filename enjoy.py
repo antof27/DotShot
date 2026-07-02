@@ -113,18 +113,50 @@ def play_manual(env_id="DotShot-Level1-v0"):
 
 def play_agent(model_path, env_id="DotShot-Level1-v0"):
     """Run a trained PPO agent in the environment with visualization."""
-    from stable_baselines3 import PPO
+    import torch
     
-    if not os.path.exists(model_path) and not model_path.endswith(".zip"):
-        model_path = model_path + ".zip"
+    # Check if this is a custom PyTorch MARL model (.pt) or an SB3 model (.zip)
+    is_marl = model_path.endswith(".pt") or model_path.endswith(".pth") or (
+        not model_path.endswith(".zip") and os.path.exists(model_path + ".pt")
+    )
+    
+    if is_marl:
+        if not model_path.endswith(".pt") and not model_path.endswith(".pth"):
+            model_path += ".pt"
+            
+        print(f"Loading custom MARL policy from {model_path}...")
+        checkpoint = torch.load(model_path, map_location="cpu")
+        algo = checkpoint["algo"]
+        obs_dim = checkpoint["obs_dim"]
+        action_dim = checkpoint["action_dim"]
+        global_state_dim = checkpoint["global_state_dim"]
         
-    if not os.path.exists(model_path):
-        print(f"Error: Model not found at {model_path}")
-        print("Please train a model first with: python3 train.py")
-        return
+        from marl.pmat import MATPolicy, PMATPolicy, RoMATPolicy
+        policy_mapping = {
+            "mat": MATPolicy,
+            "pmat": PMATPolicy,
+            "romat": RoMATPolicy
+        }
         
-    print(f"Loading trained PPO agent from {model_path}...")
-    model = PPO.load(model_path)
+        policy = policy_class = policy_mapping[algo](
+            obs_dim=obs_dim,
+            action_dim=action_dim,
+            global_state_dim=global_state_dim
+        )
+        policy.load_state_dict(checkpoint["state_dict"])
+        policy.eval()
+    else:
+        from stable_baselines3 import PPO
+        if not os.path.exists(model_path) and not model_path.endswith(".zip"):
+            model_path = model_path + ".zip"
+            
+        if not os.path.exists(model_path):
+            print(f"Error: Model not found at {model_path}")
+            print("Please train a model first with: python3 train.py")
+            return
+            
+        print(f"Loading trained SB3 PPO agent from {model_path}...")
+        model = PPO.load(model_path)
     
     # Initialize environment in human mode
     game_env = gym.make(env_id, render_mode="human")
@@ -136,8 +168,18 @@ def play_agent(model_path, env_id="DotShot-Level1-v0"):
     
     try:
         while running:
-            # Predict actions using model
-            action, _states = model.predict(obs, deterministic=True)
+            # Predict actions using the loaded model
+            if is_marl:
+                # Reshape observation to individual agent dimensions: [1, num_agents, obs_dim]
+                obs_n = torch.tensor(obs, dtype=torch.float32).view(1, 2, obs_dim)
+                with torch.no_grad():
+                    actions_n, _ = policy.select_actions(obs_n, deterministic=True)
+                    
+                # Decode action tokens back to multi-discrete vectors and flatten
+                from marl.train_marl import decode_actions
+                action = decode_actions(actions_n, "cpu").numpy().flatten()
+            else:
+                action, _states = model.predict(obs, deterministic=True)
             
             # Step the environment
             obs, reward, terminated, truncated, info = game_env.step(action)
