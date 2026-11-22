@@ -10,9 +10,8 @@ __pycache__/
 # Training Outputs & Heavy Binaries
 tb_log/
 runs/
-models/*
+legacy_v1/models/*
 models_marl/*
-plots/*
 *.pt
 *.pth
 *.zip
@@ -20,7 +19,8 @@ plots/*
 *.sqlite
 run_tuning.sh
 
-# Keep curated handbook assets tracked
+# Keep curated handbook assets and metric summaries tracked
 !docs/assets/
-!docs/assets/figures/
-!docs/assets/videos/
+!docs/assets/**
+!docs/results/
+!docs/results/**

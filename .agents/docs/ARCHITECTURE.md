@@ -18,7 +18,7 @@ flowchart TD
         AgentDocs[".agents/docs/ (PRE-PRD, PRD, Plan, Arch, ADRs)"]
     end
 
-    subgraph Simulator ["dotshot/ (Headless Core + Optional Render)"]
+    subgraph Simulator ["src/dotshot/ (Headless Core + Optional Render)"]
         Config["core/config.py (Stage 1-4 Presets)"]
         Arena["core/arena.py (1440x960 Cover + LOS Raycast)"]
         Entities["core/entities.py (Classes, Core, Boss, Enemies)"]
@@ -37,7 +37,7 @@ flowchart TD
         MultiEnv -.-> Renderer
     end
 
-    subgraph Benchmarks ["benchmarks/ (Reproducible Training and Eval)"]
+    subgraph Benchmarks ["src/benchmarks/ (Reproducible Training and Eval)"]
         YAML["configs/*.yaml"]
         SARunner["runners/run_single_agent.py"]
         MARLNet["marl/networks.py + buffer.py"]
@@ -72,49 +72,52 @@ flowchart TD
 ```text
 RL/RL-game1/
 |-- AGENTS.md                          # Permanent agent governance rules
-|-- pyproject.toml                     # Editable package metadata (dotshot)
+|-- pyproject.toml                     # Editable package metadata (src/ layout for dotshot & benchmarks)
 |-- requirements.txt                   # Pinned Windows CUDA dependencies
-|-- enjoy.py                           # Manual play, checkpoint viewer, Tab overlay, MP4 export
 |-- .agents/
 |   |-- docs/                          # PRE_PRD, PRD, IMPLEMENTATION_PLAN, ARCHITECTURE, DECISIONS, ROADMAP
-|   |-- skills/                        # humanizer, notelia-docs, rl-gymnasium-sb3, marl-benchmark-design, pygame-simulator-craft
-|-- dotshot/
-|   |-- __init__.py                    # Registers Gymnasium Stage 1-2 IDs
-|   |-- core/
-|   |   |-- config.py                  # Stage presets, class stats, arena geometry
-|   |   |-- arena.py                   # 1440x960 AABB obstacles, circle collisions, LOS raycasts, 8-ray LIDAR
-|   |   |-- entities.py                # Agents (Vanguard/Striker/Support), Core, Enemies, ShieldedBoss, Bullets
-|   |   |-- rewards.py                 # Individual + Team reward mixing and raw component telemetry
-|   |-- envs/
-|   |   |-- single_agent.py            # DotShotSingleEnv (Gymnasium Stages 1-2)
-|   |   |-- multi_agent.py             # DotShotParallelEnv (PettingZoo ParallelEnv Stages 3-4)
-|   |-- render/
-|       |-- pygame_renderer.py         # Pre-cached neon glow renderer, HUD, MARL Tab overlay
-|-- benchmarks/
-|   |-- utils/
-|   |   |-- seeding.py                 # Deterministic seed + Git SHA + hardware capture
-|   |   |-- logger.py                  # TensorBoard + JSONL telemetry writer
-|   |-- runners/
-|   |   |-- run_single_agent.py        # Random, Heuristic, SB3 A2C, SB3 PPO
-|   |-- marl/
-|   |   |-- networks.py                # Factored Actor, Centralized Critic, Branching QMIX, Factored MAT/PMAT/RoMAT
-|   |   |-- buffer.py                  # On-policy MARL rollout buffer + off-policy episode replay buffer
-|   |   |-- train_marl.py              # Unified YAML-driven MARL CLI
-|   |   |-- algos/
-|   |       |-- ippo.py
-|   |       |-- qmix.py                # Branching-VDN and Branching-QMIX
-|   |       |-- mappo.py
-|   |       |-- happo.py               # HAPPO and HATRPO sequential advantage decomposition
-|   |       |-- mat.py                 # MAT, PMAT, and RoMAT
-|   |-- eval/
-|       |-- evaluate.py                # Multi-seed IQM, Median, Mean, 95% bootstrap CIs
-|       |-- plot_results.py            # Learning curves, bar/radar charts, Markdown tables, MP4 clips
+|   |-- skills/                        # 12 workspace skills (humanizer, notelia-docs, scientific-latex-report, etc.)
+|-- src/
+|   |-- dotshot/
+|   |   |-- __init__.py                # Registers Gymnasium Stage 1-2 IDs
+|   |   |-- core/
+|   |   |   |-- config.py              # Stage presets, class stats, arena geometry
+|   |   |   |-- arena.py               # 1440x960 AABB obstacles, circle collisions, LOS raycasts, 8-ray LIDAR
+|   |   |   |-- entities.py            # Agents (Vanguard/Striker/Support), Core, Enemies, ShieldedBoss, Bullets
+|   |   |   |-- engine.py              # Pure headless simulation loop and smooth v2.1 aim/LOS caching
+|   |   |   |-- rewards.py             # Individual + Team reward mixing and raw component telemetry
+|   |   |-- envs/
+|   |   |   |-- single_agent.py        # DotShotSingleEnv (Gymnasium Stages 1-2)
+|   |   |   |-- multi_agent.py         # DotShotParallelEnv (PettingZoo ParallelEnv Stages 3-4)
+|   |   |-- render/
+|   |       |-- pygame_renderer.py     # Pre-cached neon glow renderer, HUD, MARL Tab overlay
+|   |-- benchmarks/
+|       |-- utils/
+|       |   |-- seeding.py             # Deterministic seed + Git SHA + hardware capture
+|       |   |-- logger.py              # TensorBoard + JSONL telemetry writer
+|       |-- runners/
+|       |   |-- run_single_agent.py    # Random, Heuristic, SB3 A2C, SB3 PPO
+|       |-- marl/
+|       |   |-- networks.py            # Factored Actor, Centralized Critic, Branching QMIX, Factored MAT/PMAT/RoMAT
+|       |   |-- buffer.py              # On-policy MARL rollout buffer + off-policy episode replay buffer
+|       |   |-- policy_loader.py       # Checkpoint loader for evaluation & enjoy.py
+|       |   |-- vec_marl_env.py        # Vectorized Dummy/Subproc MARL env wrapper
+|       |   |-- train_marl.py          # Unified YAML-driven MARL CLI
+|       |   |-- algos/
+|       |       |-- common.py, ippo.py, qmix.py, mappo.py, happo.py, mat.py
+|       |-- eval/
+|           |-- evaluate.py            # Multi-seed IQM, Median, Mean, 95% bootstrap CIs
+|           |-- plot_results.py        # Learning curves, bar/radar charts, Markdown tables, MP4 clips
 |-- configs/                           # Versioned YAML experiment definitions (stage1..stage4)
-|-- docs/                              # Docsify site (index.html, _sidebar.md, 01..04 chapters, references.bib, assets/)
+|-- docs/                              # Unified Docsify site, LaTeX paper/, results/*.json, assets/ (figures, screenshots, videos, legacy_v1_plots)
 |-- scripts/
+|   |-- enjoy.py                       # Manual play, checkpoint viewer, Tab overlay, MP4 export
+|   |-- capture_screenshots.py         # Deterministic 1440x960 screenshot generator
+|   |-- run_m2_suite.py                # Parallel CUDA Milestone 2 sweep orchestrator
+|   |-- plot_m2_ablations.py           # Alpha and LOS ablation plotter
 |   |-- validate_docs.py               # Citation, link, asset, and Humanizer prose validator
 |-- tests/                             # pytest suite (single env, multi env, MARL algos)
-|-- env/ & marl/                       # Preserved v1 reference prototype
+|-- legacy_v1/                         # Archived v1 reference prototype (env/, marl/, models/, v1 CLI scripts)
 ```
 
 ---

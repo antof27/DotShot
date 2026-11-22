@@ -11,14 +11,14 @@
 
 ## 3.1 Why DotShot v1 Was Not Enough (Engineering Post-Mortem)
 
-DotShot v1 (`env/game_env.py` and `marl/train_marl.py`) proved that PPO and early Transformer prototypes could learn elemental shooting in an `800×800` box. However, auditing v1 exposed five design bottlenecks that prevented rigorous MARL research:
+DotShot v1 (`legacy_v1/env/game_env.py` and `legacy_v1/marl/train_marl.py`) proved that PPO and early Transformer prototypes could learn elemental shooting in an `800×800` box. However, auditing v1 exposed five design bottlenecks that prevented rigorous MARL research:
 
 | Component | DotShot v1 Limitation | DotShot v2 Engineering Solution | Impact on MARL Benchmarking |
 | :--- | :--- | :--- | :--- |
 | **Arena & Occlusion** | Empty `800×800` square; zero obstacles or vision gating | `1440×960` arena with beveled rectangular cover blocks, circle-AABB collisions, and segment-AABB Line-of-Sight (LOS) raycasts | Creates genuine partial observability under cover and forces coordinated flanking |
 | **Team Objective** | Two identical agents surviving random waves independently | Central Energy Core (`HP = 500`) + periodic **Elemental-Shielded Bosses** | Forces joint defense, shield-break windows, and focus-fire combos |
 | **Agent Diversity** | Homogeneous stats and weapons across all agents | Stage 4 heterogeneous squad: **Vanguard** (Tank), **Striker** (DPS), **Support** (Healer/Marker) | Tests parameter-sharing `MAPPO` failure modes vs `HAPPO`/`HATRPO` and `RoMAT` |
-| **Action Encoding** | `marl/train_marl.py` flattened `MultiDiscrete([3,3,64,4])` into a `2304`-class integer | Factored `MultiDiscrete([3, 3, 32, 4])` policy heads and Branching Dueling Q-heads [@tavakoli2018branching] | Eliminates `2304`-way softmax explosion and preserves angular locality |
+| **Action Encoding** | `legacy_v1/marl/train_marl.py` flattened `MultiDiscrete([3,3,64,4])` into a `2304`-class integer | Factored `MultiDiscrete([3, 3, 32, 4])` policy heads and Branching Dueling Q-heads [@tavakoli2018branching] | Eliminates `2304`-way softmax explosion and preserves angular locality |
 | **Environment API** | Concatenated vector inside one Gymnasium `Box` | Dual standard APIs: **Gymnasium** (`Stages 1–2`) + **PettingZoo `ParallelEnv`** (`Stages 3–4`) with explicit `env.state()` | Cleanly separates decentralized $o_i^t$ from centralized CTDE $s^t$ |
 
 ---
@@ -81,7 +81,7 @@ Exposing $\alpha$ in YAML configs enables controlled credit-assignment ablations
 
 ### Reward Shaping v2.1 and Throughput Optimization
 
-Milestone 2 introduces **Reward Shaping v2.1** (`dotshot/core/engine.py`, `dotshot/core/rewards.py`) and vectorization optimizations (`benchmarks/marl/vec_marl_env.py`) to remove early exploration deadlocks and speed up multi-seed sweeps on Windows:
+Milestone 2 introduces **Reward Shaping v2.1** (`src/dotshot/core/engine.py`, `src/dotshot/core/rewards.py`) and vectorization optimizations (`src/benchmarks/marl/vec_marl_env.py`) to remove early exploration deadlocks and speed up multi-seed sweeps on Windows:
 
 | Component | v2.0 Baseline | v2.1 Upgrade | Measured Impact |
 | :--- | :--- | :--- | :--- |
@@ -105,7 +105,7 @@ Milestone 2 introduces **Reward Shaping v2.1** (`dotshot/core/engine.py`, `dotsh
 
 ## 3.5 Renderer Architecture and MARL Explainability Overlay
 
-Physics in `dotshot/core/` never imports `pygame`. When `enjoy.py` or video recording attaches `DotShotPygameRenderer`, pre-cached radial glow sprites and static background surfaces sustain 60 FPS at `1440×960`. Pressing `Tab` toggles the **MARL Explainability Overlay**, rendering 8-ray LIDAR ticks, aim lasers, and live `MAT`/`PMAT` execution priority badges (`#1`, `#2`, `#3`) directly over the arena.
+Physics in `src/dotshot/core/` never imports `pygame`. When `scripts/enjoy.py` or video recording attaches `DotShotPygameRenderer`, pre-cached radial glow sprites and static background surfaces sustain 60 FPS at `1440×960`. Pressing `Tab` toggles the **MARL Explainability Overlay**, rendering 8-ray LIDAR ticks, aim lasers, and live `MAT`/`PMAT` execution priority badges (`#1`, `#2`, `#3`) directly over the arena.
 
 ---
 

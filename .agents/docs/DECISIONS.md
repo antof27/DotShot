@@ -73,3 +73,10 @@ This log records the major architectural decisions behind **DotShot Game v2** (`
 - **Decision:** Replace the binary aim cliff with smooth forward-hemisphere cosine shaping (`(best_dot ** 2) * 0.25` for `best_dot > 0.0`), remove passive hold-fire rewards, flatten badly-aimed miss penalties to `-0.04` (`0.0` for well-aimed misses), and raise positive hit/kill rewards (`hits_correct: 2.2`, `kills: 5.0`, `boss_kills: 10.0`, `shield_breaks: 4.5`, `combo_kills: 5.0`), while keeping $r_i^t = (1-\alpha)r_{i,\text{indiv}}^t + \alpha r_{\text{team}}^t$ intact.
 - **Alternatives Rejected:** Auto-aim assist or shrinking the aim space below 32 bins.
 - **Consequences:** Preserves full 32-bin aiming skill while providing smooth policy-gradient credit toward target alignment and aggressive elemental engagement.
+
+## ADR-011: PyPA `src/` Layout, Unified `docs/` Artifacts, and `legacy_v1/` Archival
+- **Status:** Accepted
+- **Context:** Keeping active packages (`dotshot/`, `benchmarks/`), legacy v1 prototypes (`env/`, `marl/`, `models/`, root v1 scripts), and old `plots/` at the repository root cluttered top-level navigation and split plots across two folders.
+- **Decision:** Move active v2 packages under `src/` (`src/dotshot/`, `src/benchmarks/`) via `pyproject.toml`, consolidate all reports, figures, screenshots, MP4 replays, curated `rliable` JSON summaries (`docs/results/`), and legacy plots (`docs/assets/legacy_v1_plots/`) under `docs/`, centralize CLI scripts including `scripts/enjoy.py`, and archive v1 prototypes in `legacy_v1/`.
+- **Alternatives Rejected:** Deleting `legacy_v1/` or keeping flat root package folders.
+- **Consequences:** Standard `src/` editable packaging prevents accidental root shadow imports, `docs/` serves as the single self-contained home for every handbook chapter, paper, plot, replay, and metric table, and v1 reference code stays inspectable without cluttering root.

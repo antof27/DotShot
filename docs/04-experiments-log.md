@@ -1,6 +1,6 @@
 # 4. Living Experiments and Benchmark Log
 
-This chapter records every empirical benchmark run on **DotShot Game v2** in chronological milestone order. All numbers come directly from logged `metrics.jsonl` trajectories and automated `benchmarks/eval/evaluate.py` summaries.
+This chapter records every empirical benchmark run on **DotShot Game v2** in chronological milestone order. All numbers come directly from logged `metrics.jsonl` trajectories and automated `src/benchmarks/eval/evaluate.py` summaries (with Milestone 2 JSON exports archived under [docs/results/](results/)).
 
 ---
 
@@ -14,7 +14,7 @@ This chapter records every empirical benchmark run on **DotShot Game v2** in chr
 
 ## 4.2 Milestone 1: Initial Single-Agent & Cooperative Smoke Benchmarks
 
-Milestone 1 validates the end-to-end training, `rliable` evaluation, and 300 DPI plotting pipelines across single-agent Stages 1–2 and a 40,000-step cooperative smoke benchmark on Stage 3. Every summary table below reports the exact output emitted by `benchmarks/eval/evaluate.py` (`2,000` bootstrap resamples).
+Milestone 1 validates the end-to-end training, `rliable` evaluation, and 300 DPI plotting pipelines across single-agent Stages 1–2 and a 40,000-step cooperative smoke benchmark on Stage 3. Every summary table below reports the exact output emitted by `src/benchmarks/eval/evaluate.py` (`2,000` bootstrap resamples).
 
 ### 4.2.1 Stage 1 Single-Agent Fundamentals (60,000 steps, 3 seeds)
 
@@ -61,7 +61,7 @@ Milestone 1 validates the end-to-end training, `rliable` evaluation, and 300 DPI
 ![Stage 3 MARL Comparison](assets/figures/stage3_marl_smoke_comparison.png)
 
 > [!TIP]
-> **Recorded Evaluation Replay**: Watch the Stage 3 policy rollout captured via `enjoy.py --record`: [Stage 3 MARL Gameplay Replay (MP4)](assets/videos/dotshot_stage3_demo.mp4).
+> **Recorded Evaluation Replay**: Watch the Stage 3 policy rollout captured via `scripts/enjoy.py --record`: [Stage 3 MARL Gameplay Replay (MP4)](assets/videos/dotshot_stage3_demo.mp4).
 
 **Quantitative & Qualitative Comparison (40k-Step Smoke Regime)**:
 
@@ -171,3 +171,6 @@ Milestone 2 applies **Reward Shaping v2.1** (smooth `(best_dot ** 2) * 0.25` aim
 **Quantitative & Qualitative Analysis**:
 - **The Credit-Assignment / Core-Defense Tradeoff ($\alpha$)**: Shifting from pure individual shaping (`ALPHA_0_00`: `-1.05 [-1.62, -0.00]`) to pure team reward (`ALPHA_1_00`: `-2.46 [-2.92, -1.83]`) creates a monotonic drop in return and kill rate (`0.2–0.3` kills/ep down to `0.0`), showing classic multi-agent lazy-agent credit dilution when $r_{\text{team}}^t$ dominates without individual feedback. Conversely, `ALPHA_0_25` achieves the highest kills (`0.3`) and best final return (`-1.04 [-1.28, -0.79]`) while neglecting the Core (`3.1%` Core HP), whereas `ALPHA_1_00` preserves the most Core HP (`19.6%`) by hugging the center passively. Intermediate mixing at `ALPHA_0_50` balances both objectives (`13.7%` Core HP, `36.7%` elemental accuracy, `0.2` kills), matching the default `0.45`–`0.50` operating point.
 - **LOS Occlusion Sharpens Local Threat Focus**: Disabling cover raycasting (`LOS_OFF`, full `760 px` omniscient enemy slots) improves **elemental accuracy (`39.7%` vs `29.1%`)** and kills (`0.2` vs `0.1`), because agents see incoming elements behind pillars before rounding corners. Yet `LOS_ON` yields higher final return (`-1.92 [-2.15, -1.76]` vs `-2.15 [-2.28, -2.03]`) and Core survival (`12.3%` vs `10.2%`): masking occluded targets removes unshootable behind-wall enemies from the top-5 hostile slots, preventing agents from wasting fire against cover blocks.
+
+> [!NOTE]
+> **Archived Milestone 2 Metric Summaries (`docs/results/`)**: [Stage 1](results/m2_stage1_eval.json) · [Stage 2](results/m2_stage2_eval.json) · [Stage 3](results/m2_stage3_eval.json) · [Stage 4](results/m2_stage4_eval.json) · [Alpha Ablation](results/m2_alpha_eval.json) · [LOS Ablation](results/m2_los_eval.json)

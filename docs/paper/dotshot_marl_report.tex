@@ -173,7 +173,7 @@ As Amato~\cite{amato2024ctde} notes in a 2024 CTDE survey, standard CTDE central
 
 \subsection{Engineering Audit: From DotShot v1 to DotShot v2}
 
-Table~\ref{tab:v1-vs-v2} summarizes the architectural upgrades separating DotShot v2 from the v1 baseline. In particular, decoupling pure-Python physics (\texttt{dotshot/core/}) from rendering (\texttt{pygame}) allows headless multi-worker rollouts at nearly $3{,}000$ FPS on CPU while preserving a 60 FPS interactive debugger with live explainability overlays.
+Table~\ref{tab:v1-vs-v2} summarizes the architectural upgrades separating DotShot v2 from the v1 baseline. In particular, decoupling pure-Python physics (\texttt{src/dotshot/core/}) from rendering (\texttt{pygame}) allows headless multi-worker rollouts at nearly $24{,}388$ single-env steps/s on CPU while preserving a 60 FPS interactive debugger with live explainability overlays.
 
 \begin{table}[t]
 \centering

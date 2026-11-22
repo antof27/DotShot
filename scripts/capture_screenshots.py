@@ -4,7 +4,7 @@ import os
 import pathlib
 import sys
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
 import numpy as np
 from PIL import Image

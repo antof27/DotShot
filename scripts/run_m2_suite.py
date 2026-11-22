@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple
 import torch
 import yaml
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
 
 def _load_cfg(path: str, steps: int, eval_freq: int, n_eval: int) -> Dict:

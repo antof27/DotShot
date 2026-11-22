@@ -1,6 +1,6 @@
 # DotShot Game: Agent Governance and Workspace Rules
 
-This repository hosts **DotShot Game**, a unified research workspace combining a tactical single-to-multi-agent Reinforcement Learning simulator (`dotshot/`), a reproducible benchmark suite (`benchmarks/`), and a living State-of-the-Art (SOTA) MARL handbook (`docs/`).
+This repository hosts **DotShot Game**, a unified research workspace combining a tactical single-to-multi-agent Reinforcement Learning simulator (`src/dotshot/`), a reproducible benchmark suite (`src/benchmarks/`), and a living State-of-the-Art (SOTA) MARL handbook (`docs/`).
 
 Every coding agent operating in this repository must follow these permanent rules.
 
@@ -29,7 +29,7 @@ DotShot Game evolves incrementally. No feature or experiment is complete until b
 
 - Execute all Python commands using the project Windows CUDA virtual environment (`.\.venv\Scripts\python.exe`). Never rely on global system Python for project runs.
 - Drive every training and evaluation run from a versioned YAML config under `configs/` with explicit deterministic seeds (`random`, `numpy`, `torch`, Gymnasium/PettingZoo).
-- Preserve legacy v1 files under `env/` and `marl/` untouched unless explicitly asked to remove or migrate them, so v1-to-v2 comparisons remain verifiable.
+- Preserve legacy v1 files under `legacy_v1/` (`legacy_v1/env/`, `legacy_v1/marl/`, etc.) untouched unless explicitly asked to remove or migrate them, so v1-to-v2 comparisons remain verifiable.
 
 ## 5. Git Workflow and Safety
 
