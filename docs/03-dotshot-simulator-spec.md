@@ -74,10 +74,22 @@ Per-step reward mixes individual combat shaping with team outcomes via explicit 
 
 $$r_i^t = (1 - \alpha) r_{i,\text{indiv}}^t + \alpha r_{\text{team}}^t$$
 
-- **$r_{i,\text{indiv}}^t$**: rewards correct hits, precision target-leading hits, solo kills, Vanguard damage absorption, Support heal/mark utility, and trigger discipline; penalizes wrong-element shots, missed shots (escalating softly with episode misses), friendly fire, contact/projectile damage, proximity danger, and death.
+- **$r_{i,\text{indiv}}^t$**: rewards correct hits, precision target-leading hits, solo kills, Vanguard damage absorption, Support heal/mark utility, and smooth forward-hemisphere aim alignment; penalizes wrong-element shots, missed shots (`-0.04` flat penalty per miss), friendly fire, contact/projectile damage, proximity danger, and death.
 - **$r_{\text{team}}^t$**: rewards team eliminations, boss kills, shield breaks, multi-agent combo kills, wave clears, and Core healing; penalizes Core damage, Core destruction, and teammate deaths.
 
 Exposing $\alpha$ in YAML configs enables controlled credit-assignment ablations without touching simulator code.
+
+### Reward Shaping v2.1 and Throughput Optimization
+
+Milestone 2 introduces **Reward Shaping v2.1** (`dotshot/core/engine.py`, `dotshot/core/rewards.py`) and vectorization optimizations (`benchmarks/marl/vec_marl_env.py`) to remove early exploration deadlocks and speed up multi-seed sweeps on Windows:
+
+| Component | v2.0 Baseline | v2.1 Upgrade | Measured Impact |
+| :--- | :--- | :--- | :--- |
+| **Aim Alignment Shaping** | Step cliff (`best_dot > 0.90` binary threshold) | Smooth quadratic cosine `(best_dot ** 2) * 0.25` across `best_dot > 0` | Provides dense angular gradient across all `32` aim bins (`11.25°`) |
+| **Hold-Fire (`a[3] == 0`)** | Awarded passive trigger-discipline points | Triggers Stage 4 class tactical ability only (hold-fire farming removed) | Prevents pacifist policies from gaming survival/hold-fire rewards |
+| **Miss & Combat Signals** | Escalating episode miss penalty, lower hit/kill scale | Flat `-0.04` miss penalty (`r_indiv_raw`) with boosted hit (`2.2`) and kill (`5.0`) signals | Encourages active engagement while keeping spray-and-pray unprofitable |
+| **LOS Obstacle Cache** | Filtered `obstacles` per raycast query | Pre-cached `_los_obstacles` tuple on engine init | Single-env throughput reaches `24,388 steps/sec` |
+| **MARL Vectorization** | `SubprocMARLEnv` (`vec_type="subproc"`, `~470 FPS` on Windows) | `DummyMARLEnv` (`vec_type="dummy"`, `2,349 env_steps/sec` on Windows) | Eliminates Windows `spawn` pipe IPC overhead (`5.0×` speedup) |
 
 ---
 

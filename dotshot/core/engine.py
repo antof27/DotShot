@@ -62,6 +62,8 @@ class DotShotEngine:
         self.np_random: np.random.Generator = np.random.default_rng(0)
         self.obs_dim = OBS_DIM
         self.state_dim = self.cfg.num_agents * 14 + 5 + self.cfg.max_enemies * 15 + 4
+        self._los_obstacles = tuple(o for o in self.cfg.obstacles if o.blocks_los)
+        self._vision_range_sq = self.cfg.vision_range * self.cfg.vision_range
 
         self.agents: List[AgentState] = []
         self.core: Optional[CentralCore] = None
@@ -230,12 +232,13 @@ class DotShotEngine:
             self.ally_spawn_timer = int(self.np_random.integers(180, 320))
 
     def _is_enemy_visible(self, agent: AgentState, enemy: Enemy) -> bool:
-        dist = float(np.hypot(enemy.x - agent.x, enemy.y - agent.y))
         if not self.cfg.partial_obs:
             return True
-        if dist > self.cfg.vision_range:
+        dx = enemy.x - agent.x
+        dy = enemy.y - agent.y
+        if dx * dx + dy * dy > self._vision_range_sq:
             return False
-        return has_line_of_sight(agent.x, agent.y, enemy.x, enemy.y, self.cfg.obstacles)
+        return has_line_of_sight(agent.x, agent.y, enemy.x, enemy.y, self._los_obstacles)
 
     def _find_ray_target_uid(self, agent: AgentState, dx: float, dy: float) -> Optional[int]:
         best_dist = 9999.0
@@ -249,7 +252,7 @@ class DotShotEngine:
                 continue
             perp = abs(ex * (-dy) + ey * dx)
             if perp <= enemy.radius + 14.0 and proj < best_dist:
-                if has_line_of_sight(agent.x, agent.y, enemy.x, enemy.y, self.cfg.obstacles):
+                if has_line_of_sight(agent.x, agent.y, enemy.x, enemy.y, self._los_obstacles):
                     best_dist = proj
                     best_uid = enemy.uid
         return best_uid
@@ -315,19 +318,21 @@ class DotShotEngine:
             best_dot = -1.0
             nearest_visible: Optional[Enemy] = None
             if visible_enemies:
-                nearest_visible = min(visible_enemies, key=lambda e: np.hypot(e.x - agent.x, e.y - agent.y))
+                nearest_visible = min(
+                    visible_enemies,
+                    key=lambda e: (e.x - agent.x) ** 2 + (e.y - agent.y) ** 2,
+                )
                 tx, ty = nearest_visible.x - agent.x, nearest_visible.y - agent.y
                 td = float(np.hypot(tx, ty))
                 if td > 1e-6:
                     best_dot = (tx * aim_dx + ty * aim_dy) / td
-                if best_dot > 0.90:
-                    ev.aim_alignment += 0.15
+                # Smooth cosine shaping across forward hemisphere replaces v2.0 >0.90 cliff
+                if best_dot > 0.0:
+                    ev.aim_alignment += (best_dot * best_dot) * 0.25
 
             weapon_action = int(act[3])
             if weapon_action == 0:
-                # Hold fire -> trigger discipline bonus if poorly aimed, or Stage 4 class ability
-                if visible_enemies and best_dot < 0.70:
-                    ev.trigger_discipline += 0.08
+                # Hold fire -> Stage 4 class ability only (removed passive trigger-discipline farming)
                 if self.cfg.stage == 4 and agent.ability_cooldown == 0:
                     self._trigger_class_ability(agent, ev, team_events)
             else:

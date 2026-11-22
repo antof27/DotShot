@@ -16,7 +16,13 @@ from benchmarks.utils.logger import ExperimentLogger
 from benchmarks.utils.seeding import seed_everything
 
 
-def run_marl_experiment(cfg: Dict[str, Any], seed: int, device_str: str, steps_override: int | None = None) -> Dict[str, float]:
+def run_marl_experiment(
+    cfg: Dict[str, Any],
+    seed: int,
+    device_str: str,
+    steps_override: int | None = None,
+    run_dir_override: str | None = None,
+) -> Dict[str, float]:
     torch.set_num_threads(1)
     seed_everything(seed)
 
@@ -31,7 +37,7 @@ def run_marl_experiment(cfg: Dict[str, Any], seed: int, device_str: str, steps_o
     exp_name = cfg.get("exp_name", f"stage{stage}_{algo}")
 
     resolved_cfg = {**cfg, "seed": seed, "device": device_str, "total_steps": total_steps}
-    run_dir = os.path.join("runs", f"stage{stage}", algo, exp_name, f"seed_{seed}")
+    run_dir = run_dir_override if run_dir_override else os.path.join("runs", f"stage{stage}", algo, exp_name, f"seed_{seed}")
     logger = ExperimentLogger(run_dir, resolved_cfg)
     device = torch.device(device_str)
 

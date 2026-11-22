@@ -66,3 +66,10 @@ This log records the major architectural decisions behind **DotShot Game v2** (`
 - **Decision:** Host the SOTA MARL handbook in `docs/` using Docsify (KaTeX + Mermaid, GitHub Pages ready), backed by `docs/references.bib` and `scripts/validate_docs.py`.
 - **Alternatives Rejected:** Plain unlinked Markdown dumps or external Notion-only pages disconnected from the code repo.
 - **Consequences:** Anyone cloning the repo can browse the interactive handbook locally or on GitHub Pages, with automated CI-style checks on citations and prose quality.
+
+## ADR-010: Reward Shaping v2.1 — Smooth Cosine Aim Gradient and Elimination of Hold-Fire Farming
+- **Status:** Accepted (Milestone 2 Calibration)
+- **Context:** Milestone 1 baselines (`60k–80k` single-agent PPO, `40k` Stage 3 MARL) revealed two exploration bottlenecks in v2.0 shaping: (1) a steep binary aim threshold (`best_dot > 0.90`) offered zero gradient across 90% of the 32 aim bins; (2) an escalating miss penalty (`-0.22 * miss_mult`) paired with a hold-fire bonus (`+0.15 * 0.08`) encouraged policies to stop shooting instead of refining aim.
+- **Decision:** Replace the binary aim cliff with smooth forward-hemisphere cosine shaping (`(best_dot ** 2) * 0.25` for `best_dot > 0.0`), remove passive hold-fire rewards, flatten badly-aimed miss penalties to `-0.04` (`0.0` for well-aimed misses), and raise positive hit/kill rewards (`hits_correct: 2.2`, `kills: 5.0`, `boss_kills: 10.0`, `shield_breaks: 4.5`, `combo_kills: 5.0`), while keeping $r_i^t = (1-\alpha)r_{i,\text{indiv}}^t + \alpha r_{\text{team}}^t$ intact.
+- **Alternatives Rejected:** Auto-aim assist or shrinking the aim space below 32 bins.
+- **Consequences:** Preserves full 32-bin aiming skill while providing smooth policy-gradient credit toward target alignment and aggressive elemental engagement.

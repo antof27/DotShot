@@ -74,13 +74,25 @@ Every experiment is driven by versioned YAML configs under `configs/`:
 # Aggregate multi-seed IQM + 95% bootstrap CIs and plot 300 DPI learning curves
 .\.venv\Scripts\python.exe -m benchmarks.eval.evaluate --stage-dir runs\stage3 --out-json runs\stage3\eval_summary.json
 .\.venv\Scripts\python.exe -m benchmarks.eval.plot_results --stage-dir runs\stage3 --out docs\assets\figures\stage3_marl_smoke_comparison.png --metrics eval/return_mean eval/core_hp_ratio eval/elemental_accuracy
+
+# Run the full Milestone 2 5-seed MARL sweeps and alpha/LOS ablations
+.\.venv\Scripts\python.exe scripts\run_m2_suite.py --part all --workers 3 --device cuda
 ```
+
+---
+
+## Milestone 2 Highlights (Reward Shaping v2.1)
+
+- **Converged Stage 1 (`200k` steps, 3 seeds)**: Smooth `(best_dot ** 2) * 0.25` aim shaping lifts SB3 `PPO` to **`38.9%` win rate** and **`89.5%` elemental accuracy** (`3.31 [1.72, 6.41]` return IQM).
+- **Stage 3 Homogeneous Co-op (`60k` env steps, 5 seeds)**: `Branching-QMIX` leads at **`-1.72 [-1.97, -1.42]`** return IQM and **`32.0%` Core HP** survival, doubling on-policy Core survival (`10.1%–17.0%`).
+- **Stage 4 Heterogeneous Squad (`60k` env steps, 5 seeds)**: `RoMAT` achieves the top final return IQM (**`-2.27 [-2.47, -2.16]`**) and the tightest 95% CI across asymmetric `Vanguard`, `Striker`, and `Support` roles ([Stage 4 Replay](docs/assets/videos/dotshot_stage4_heterogeneous.mp4)).
+- **Throughput & Ablations**: Pre-cached LOS geometry (`24,388 steps/sec` single-env) and `DummyMARLEnv` (`2,349 env_steps/sec` vs `~470 FPS` `SubprocMARLEnv` on Windows) power 3-seed $\alpha \in [0, 1]$ and LOS occlusion ablations in [Chapter 4](docs/04-experiments-log.md).
 
 ---
 
 ## Research Handbook, Scientific Report & Quality Gates
 
-- **Docsify Handbook**: Serve chapters 1–4 (RL-to-MARL foundations, CTDE taxonomy, simulator spec, and Milestone 1 empirical logs) locally:
+- **Docsify Handbook**: Serve chapters 1–4 (RL-to-MARL foundations, CTDE taxonomy, simulator spec, and Milestone 1–2 empirical logs) locally:
   ```powershell
   python -m http.server 8080 --directory docs
   ```
