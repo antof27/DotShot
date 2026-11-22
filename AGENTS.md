@@ -57,7 +57,8 @@ DotShot Game evolves incrementally. No feature or experiment is complete until b
 
 ### Workspace Skills (`.agents/skills/`) and Global Skills
 - [opencode-workers](file:///C:/Users/anton/.gemini/config/skills/opencode-workers/SKILL.md) (global): Orchestrator-worker delegation via `opencode run` or fast `flash` subagents to conserve Gemini orchestrator tokens.
-- [humanizer](.agents/skills/humanizer/SKILL.md): Scientific and technical prose cleanup against AI writing patterns.
+- [ponytail](.agents/skills/ponytail/SKILL.md) (`DietrichGebert/ponytail`, global + workspace; paired with `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`, `ponytail-help`): Lazy senior dev YAGNI discipline, minimal complete diffs, code review, and bloat audits.
+- [humanizer](.agents/skills/humanizer/SKILL.md) (`blader/humanizer` v4.0.0, global + workspace): Scientific and technical prose cleanup against AI writing patterns.
 - [notelia-docs](.agents/skills/notelia-docs/SKILL.md): Pedagogical handbook structure, KaTeX/Mermaid formatting, and BibTeX quality gates.
 - [citation-fact-checking](.agents/skills/citation-fact-checking/SKILL.md): Primary-source academic citation verification and zero-fabrication rules.
 - [rl-gymnasium-sb3](.agents/skills/rl-gymnasium-sb3/SKILL.md): Gymnasium compliance, reward shaping guardrails, and Stable-Baselines3 workflows.
