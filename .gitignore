@@ -1,10 +1,26 @@
+# Environments & Caches
 .venv/
 __pycache__/
 *.pyc
-tb_log/
+*.pyo
+.pytest_cache/
+*.egg-info/
 .DS_Store
 
-# Ignore intermediate checkpoints to save space, but keep final models
+# Training Outputs & Heavy Binaries
+tb_log/
+runs/
 models/*
+models_marl/*
+plots/*
+*.pt
+*.pth
+*.zip
+*.db
+*.sqlite
+run_tuning.sh
 
-plot/*
+# Keep curated handbook assets tracked
+!docs/assets/
+!docs/assets/figures/
+!docs/assets/videos/
