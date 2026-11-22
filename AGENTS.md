@@ -66,4 +66,6 @@ DotShot Game evolves incrementally. No feature or experiment is complete until b
 - [experiment-reproducibility-optuna](.agents/skills/experiment-reproducibility-optuna/SKILL.md): YAML experiment schemas, dual JSONL/TensorBoard telemetry, and Optuna HPO.
 - [scientific-plotting-rliable](.agents/skills/scientific-plotting-rliable/SKILL.md): IQM, 95% bootstrap CIs, colorblind-safe plots, and Markdown table exports.
 - [pygame-simulator-craft](.agents/skills/pygame-simulator-craft/SKILL.md): Headless/renderer decoupling, 60 FPS neon tactical VFX, and MARL explainability overlays.
+- [scientific-latex-report](.agents/skills/scientific-latex-report/SKILL.md): Publication-grade English `.tex` report authoring with `booktabs`, BibTeX, and structural checks.
+- [game-visual-documentation](.agents/skills/game-visual-documentation/SKILL.md): Deterministic offscreen `1440×960` screenshot capture and qualitative visual analysis.
 - [gitflow-github-sync](.agents/skills/gitflow-github-sync/SKILL.md): Feature-branch Gitflow, `.gitignore` hygiene, and continuous GitHub synchronization.
