@@ -40,6 +40,7 @@ This roadmap tracks progress across all four coupled pillars of **DotShot Game v
 - [x] 5-seed Stage 4 heterogeneous benchmark (`RoMAT`, `MAPPO`, `HAPPO`, `IPPO`, 60k env steps, CUDA) + Stage 4 MP4 replay.
 - [x] Controlled credit-assignment $\alpha$ ablation (`0.0, 0.25, 0.5, 0.75, 1.0`) and LOS partial-observability ablation (`LOS_OFF` vs `LOS_ON`, 3 seeds, 50k steps, CUDA).
 - [x] 300 DPI `rliable` figures, Stage 4 MP4 replay, and quantitative + qualitative analysis published in `docs/03-dotshot-simulator-spec.md`, `docs/04-experiments-log.md`, and `README.md`.
+- [x] Repository layout refactored into PyPA `src/` (`src/dotshot/`, `src/benchmarks/`), unified `docs/` (reports, `results/`, `figures/`, `screenshots/`, `videos/`, `legacy_v1_plots/`), `scripts/`, and `legacy_v1/`.
 
 ### Milestone 3: Transfer, Tuning & GitHub Release (Next)
 - [ ] Stage 2 -> Stage 3/4 checkpoint weight surgery v2 validated.

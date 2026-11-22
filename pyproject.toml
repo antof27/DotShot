@@ -29,8 +29,9 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["dotshot*", "benchmarks*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = ["src"]

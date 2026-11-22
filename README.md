@@ -1,6 +1,23 @@
 # DotShot Game v2
 
-**DotShot Game v2** is a tactical 2D single-to-multi-agent Reinforcement Learning (RL) simulator (`dotshot/`), paired with a reproducible benchmark suite (`benchmarks/`) and a living English MARL research handbook (`docs/`). Agents navigate a `1440×960` cover-filled arena, switch across three counter-elements (**Water beats Fire**, **Grass beats Water**, **Fire beats Grass**), defend a Central Energy Core, and coordinate to shatter periodic **Shielded Bosses** under Line-of-Sight (LOS) partial observability.
+**DotShot Game v2** is a tactical 2D single-to-multi-agent Reinforcement Learning (RL) simulator (`src/dotshot/`), paired with a reproducible benchmark suite (`src/benchmarks/`) and a living English MARL research handbook (`docs/`). Agents navigate a `1440×960` cover-filled arena, switch across three counter-elements (**Water beats Fire**, **Grass beats Water**, **Fire beats Grass**), defend a Central Energy Core, and coordinate to shatter periodic **Shielded Bosses** under Line-of-Sight (LOS) partial observability.
+
+---
+
+## Repository Structure
+
+```text
+RL-game1/
+├── src/
+│   ├── dotshot/        # Simulator physics (core/), Gymnasium & PettingZoo envs (envs/), Pygame renderer (render/)
+│   └── benchmarks/     # Single-agent SB3 runners, modular CTDE MARL algos, rliable evaluator & plotter
+├── configs/            # Versioned YAML experiment definitions (Stage 1–4)
+├── docs/               # Docsify SOTA handbook (01..04), BibTeX, LaTeX paper/, results/, assets/ (figures, screenshots, videos, legacy_v1_plots)
+├── scripts/            # enjoy.py (manual play / MP4 capture), run_m2_suite.py, plot_m2_ablations.py, validate_docs.py
+├── tests/              # pytest simulator & CUDA MARL verification suite
+├── legacy_v1/          # Archived DotShot v1 prototype (env/, marl/, models/, v1 CLI scripts)
+└── .agents/            # Workspace agent skills (.agents/skills/) & architecture/roadmap specs (.agents/docs/)
+```
 
 ---
 
@@ -49,10 +66,10 @@ Play any stage interactively with keyboard and mouse, or replay/record a trained
 
 ```powershell
 # Play Stage 3 cooperatively (controls Agent 0 with WASD + mouse; 1/2/3 elements; Space/Click fire; Tab overlay)
-.\.venv\Scripts\python.exe enjoy.py --stage 3 --manual
+.\.venv\Scripts\python.exe scripts\enjoy.py --stage 3 --manual
 
 # Evaluate a trained MARL checkpoint or export an MP4 clip headlessly
-.\.venv\Scripts\python.exe enjoy.py --stage 3 --model runs\stage3\mat\stage3_mat\seed_0\checkpoints\final.pt --record docs\assets\videos\dotshot_stage3_demo.mp4 --fps 30
+.\.venv\Scripts\python.exe scripts\enjoy.py --stage 3 --model runs\stage3\mat\stage3_mat\seed_0\checkpoints\final.pt --record docs\assets\videos\dotshot_stage3_demo.mp4 --fps 30
 ```
 
 ---
