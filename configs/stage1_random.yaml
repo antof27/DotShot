@@ -1,0 +1,5 @@
+stage: 1
+algo: random
+exp_name: stage1_random
+total_steps: 100000
+n_eval_episodes: 16

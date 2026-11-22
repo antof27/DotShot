@@ -1,0 +1,5 @@
+stage: 2
+algo: heuristic
+exp_name: stage2_heuristic
+total_steps: 120000
+n_eval_episodes: 16
