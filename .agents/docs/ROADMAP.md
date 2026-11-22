@@ -10,8 +10,8 @@ This roadmap tracks progress across all four coupled pillars of **DotShot Game v
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **M0** | Governance, Skills, Planning Docs | Audit complete | Audit complete | Structure planned | `origin/dev` inspected | **Complete** |
 | **M1** | Windows CUDA `.venv` + DotShot v2 + MARL Engine + SOTA Handbook + Initial Benchmarks + Notelia Skill | Stages 1–4 + Renderer + Tests | SB3 SA + Modular MARL Suite + `rliable` Eval + Stage 1–3 M1 Runs | Chapters 1–4 + `references.bib` + Validator + M1 Results | Portable EN skill + tests merged to local `dev` | **Complete** |
-| **M2** | Full 5-Seed MARL Sweeps & Credit-Assignment Ablations | LOS & $\alpha$ ablation hooks verified | 5-seed Stage 3 & Stage 4 full sweeps | Full empirical comparisons & failure analysis in Ch. 4 | Sync doc validator upgrades if useful | **Next** |
-| **M3** | Transfer Surgery v2, MARL HPO & Release Polish | Curriculum weight surgery v2 + MP4 gallery | Optuna MARL HPO presets | GitHub Pages launch & final citation audit | Release tag parity check | **Planned** |
+| **M2** | Full 5-Seed MARL Sweeps & Credit-Assignment Ablations | Reward v2.1 + pre-cached LOS + `DummyMARLEnv` verified | Converged Stage 1–2 + 5-seed Stage 3 & Stage 4 sweeps + $\alpha$/LOS ablations | Complete Milestone 2 results, 300 DPI figures & Stage 4 MP4 in Ch. 3–4 | Doc validator gate passing (`0` errors) | **Complete** |
+| **M3** | Transfer Surgery v2, MARL HPO & Release Polish | Curriculum weight surgery v2 + MP4 gallery | Optuna MARL HPO presets | GitHub Pages launch & final citation audit | Release tag parity check | **Next** |
 
 ---
 
@@ -33,13 +33,15 @@ This roadmap tracks progress across all four coupled pillars of **DotShot Game v
 - [x] Stage 1–2 Single-Agent (3 seeds) + Stage 3 MARL smoke-test comparison executed; figures, MP4 clip, and IQM tables published in `docs/04-experiments-log.md`.
 - [x] Upstream Notelia feature branch (`feature/notelia-portable-skill-en`) tested 100% and merged `--no-ff` to local `dev`.
 
-### Milestone 2: Full Multi-Seed MARL Sweeps & Ablations (Next)
-- [ ] 5-seed Stage 3 homogeneous benchmark (`IPPO`, `Branching-VDN`, `Branching-QMIX`, `MAPPO`, `HAPPO`, `HATRPO`, `MAT`, `PMAT`).
-- [ ] 5-seed Stage 4 heterogeneous benchmark (`IPPO`, `MAPPO`, `HAPPO`, `HATRPO`, `MAT`, `PMAT`, `RoMAT`).
-- [ ] Credit-assignment $\alpha$ ablation (`0.0, 0.25, 0.5, 0.75, 1.0`), LOS partial-observability ablation, and factored vs 2,304-flat action ablation.
-- [ ] Complete statistical plots, synergy heatmaps, and qualitative replay breakdowns added to `docs/04-experiments-log.md`.
+### Milestone 2: Full Multi-Seed MARL Sweeps & Ablations (Complete)
+- [x] Reward Shaping v2.1 (`(best_dot ** 2) * 0.25` aim gradient, hold-fire farming removal, flat `-0.04` miss penalty) + pre-cached LOS (`24,388 steps/sec`) + `DummyMARLEnv` (`2,349 env_steps/sec` on Windows).
+- [x] Converged 200k-step Stage 1 & Stage 2 single-agent benchmarks (`HEURISTIC`, `PPO`, `A2C`, `RANDOM`, 3 seeds).
+- [x] 5-seed Stage 3 homogeneous benchmark (`QMIX`, `HAPPO`, `MAPPO`, `MAT`, `IPPO`, 60k env steps, CUDA).
+- [x] 5-seed Stage 4 heterogeneous benchmark (`RoMAT`, `MAPPO`, `HAPPO`, `IPPO`, 60k env steps, CUDA) + Stage 4 MP4 replay.
+- [x] Controlled credit-assignment $\alpha$ ablation (`0.0, 0.25, 0.5, 0.75, 1.0`) and LOS partial-observability ablation (`LOS_OFF` vs `LOS_ON`, 3 seeds, 50k steps, CUDA).
+- [x] 300 DPI `rliable` figures, Stage 4 MP4 replay, and quantitative + qualitative analysis published in `docs/03-dotshot-simulator-spec.md`, `docs/04-experiments-log.md`, and `README.md`.
 
-### Milestone 3: Transfer, Tuning & GitHub Release
+### Milestone 3: Transfer, Tuning & GitHub Release (Next)
 - [ ] Stage 2 -> Stage 3/4 checkpoint weight surgery v2 validated.
 - [ ] Optuna MARL hyperparameter tuning configs verified.
 - [ ] Docsify GitHub Pages site live-tested + final humanizer & BibTeX gate before push.

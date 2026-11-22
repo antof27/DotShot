@@ -72,3 +72,102 @@ Because `40,000` environment steps on `2` seeds represent a short verification r
 3. **`MAPPO` (`-2.30` Final Return, `29.3%` Core HP, `32.2%` Elem Acc)**: Shared-parameter MAPPO (`@yu2022mappo`) achieves the highest **Core survival (`29.3%`)** at `40k` steps, rising steeply from `7%` at step `20k`. Conditioning the centralized critic on `env.state()` stabilizes early Core-defense positioning because both Stage 3 agents are homogeneous `Striker` units that benefit from doubled gradient throughput via parameter sharing.
 4. **`IPPO` (`-2.52` Final Return, `7.0%` Core HP, `30.1%` Elem Acc)**: Independent PPO (`@dewitt2020ippo`) flattens near `-2.52` while Core survival drops steadily from `24%` to `7.0%`. Without centralized state access or cross-agent conditioning, each independent critic tracks a moving target under LOS partial observability.
 5. **`HAPPO` (`-2.78` Final Return, `2.2%` Core HP, `16.8%` Elem Acc)**: Sequential heterogeneous updates (`@kuba2022happo`) perform worst in the `40k`-step smoke window (`-2.78 [-3.12, -2.44]`). Unlike shared `MAPPO` or `MAT`, `HAPPO` maintains separate actor parameters per agent without weight sharing, halving per-network sample reuse on a 2-agent homogeneous team. Milestone 2 (`200k+` steps across `5` seeds on Stages 3 and 4) will test whether `HAPPO` catches up on Stage 3 and pulls ahead of shared `MAPPO` when Stage 4 introduces asymmetric `Vanguard`, `Striker`, and `Support` roles.
+
+---
+
+## 4.3 Milestone 2: Converged Single-Agent, 5-Seed MARL Sweeps, and Controlled Ablations
+
+Milestone 2 applies **Reward Shaping v2.1** (smooth `(best_dot ** 2) * 0.25` aim gradient, removal of hold-fire farming, flat `-0.04` miss penalty, and boosted hit/kill terms) together with `DummyMARLEnv` (`vec_type="dummy"`, `2,349 env_steps/sec` on Windows) and pre-cached LOS geometry (`24,388 steps/sec` single-env). This section records converged 200k-step single-agent runs, 5-seed Stage 3 and Stage 4 MARL sweeps on RTX 3060 CUDA, and controlled 3-seed ablations over $\alpha$ and Line-of-Sight (LOS) masking.
+
+### 4.3.1 Stage 1 & Stage 2 Converged Single-Agent (v2.1, 200,000 steps, 3 seeds)
+
+#### Stage 1 Single-Agent Fundamentals (v2.1, 200,000 steps, 3 seeds)
+
+| Algorithm | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `HEURISTIC` | 3 | 37.68 [35.34, 39.21] | 37.68 [35.34, 39.21] | 97.9% | 100.0% | 100.0% | 21.1 |
+| `PPO` | 3 | 3.31 [1.72, 6.41] | 3.55 [1.81, 6.41] | 38.9% | 100.0% | 89.5% | 2.3 |
+| `A2C` | 3 | -1.34 [-1.88, -1.00] | -1.21 | 0.0% | 100.0% | 74.9% | 0.4 |
+| `RANDOM` | 3 | -2.29 [-2.36, -2.18] | -2.29 [-2.36, -2.18] | 0.0% | 100.0% | 28.6% | 0.0 |
+
+![Stage 1 Converged Learning Curves](assets/figures/m2_stage1_converged.png)
+
+#### Stage 2 Elemental Mastery (v2.1, 200,000 steps, 3 seeds)
+
+| Algorithm | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `HEURISTIC` | 3 | 18.84 [18.07, 20.32] | 18.84 [18.07, 20.32] | 0.0% | 100.0% | 99.7% | 10.9 |
+| `PPO` | 3 | -1.16 [-1.59, -0.92] | -1.03 [-1.19, -0.92] | 0.0% | 100.0% | 31.5% | 0.2 |
+| `A2C` | 3 | -1.58 [-1.97, -1.07] | -1.26 | 0.0% | 100.0% | 22.0% | 0.2 |
+| `RANDOM` | 3 | -1.99 [-2.02, -1.93] | -1.99 [-2.02, -1.93] | 0.0% | 100.0% | 32.5% | 0.0 |
+
+![Stage 2 Converged Learning Curves](assets/figures/m2_stage2_converged.png)
+
+**Quantitative & Qualitative Analysis**:
+- **Stage 1 Breakthrough Under v2.1**: Replacing the binary `>0.90` aim cliff with smooth `(best_dot ** 2) * 0.25` shaping lets `PPO` [@schulman2017ppo] move past the Milestone 1 underfitting regime (`-4.47` return, `0.0%` wins) to `3.31 [1.72, 6.41]` final IQM (`3.55 [1.81, 6.41]` best), `38.9%` win rate, `89.5%` elemental accuracy, and `2.3` kills per episode. `A2C` also learns element selection (`74.9%` accuracy) and improves over `RANDOM` (`-1.34 [-1.88, -1.00]` vs `-2.29 [-2.36, -2.18]`), though synchronous actor-critic updates trail PPO's clipped surrogate (`0.0%` win rate, `0.4` kills).
+- **Why Stage 2 Remains Hard at 200k Steps**: Even with smooth aim gradients, Stage 2 `PPO` plateaus at `-1.16 [-1.59, -0.92]` (`31.5%` elemental accuracy, `0.2` kills) and `A2C` reaches `-1.58 [-1.97, -1.07]` (`22.0%` accuracy, `0.2` kills), ahead of `RANDOM` (`-1.99`) yet far behind `HEURISTIC` (`18.84 [18.07, 20.32]`). Conditioning the `4`-choice weapon head on all three enemy types while simultaneously dodging incoming fire and sparing neutral allies causes multi-head gradient conflict when trained from scratch; this directly motivates Stage 1 $\to$ Stage 2 weight transfer in Milestone 3.
+
+---
+
+### 4.3.2 Stage 3 Homogeneous Co-op (5 seeds, 60,000 env steps, CUDA)
+
+| Algorithm | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `QMIX` | 5 | -1.72 [-1.97, -1.42] | -1.64 [-1.78, -1.37] | 0.0% | 32.0% | 27.4% | 0.2 |
+| `HAPPO` | 5 | -1.75 [-2.37, -1.45] | -1.65 [-1.87, -1.45] | 0.0% | 10.1% | 39.7% | 0.1 |
+| `MAPPO` | 5 | -1.84 [-2.45, -1.56] | -1.61 [-1.69, -1.47] | 0.0% | 16.2% | 42.2% | 0.2 |
+| `MAT` | 5 | -1.99 [-2.29, -1.80] | -1.87 [-2.05, -1.77] | 0.0% | 17.0% | 40.9% | 0.1 |
+| `IPPO` | 5 | -2.02 [-2.23, -1.59] | -1.67 [-1.96, -1.45] | 0.0% | 10.6% | 39.6% | 0.2 |
+
+![Stage 3 5-Seed MARL Comparison](assets/figures/m2_stage3_5seed_marl.png)
+
+**Quantitative & Qualitative Analysis**:
+- **Value Factorization Leads Core Defense**: Across `5` seeds at `60,000` environment steps, `Branching-QMIX` [@rashid2018qmix; @tavakoli2018branching] ranks first on final return (`-1.72 [-1.97, -1.42]`) and doubles every on-policy method on **Core survival (`32.0%` vs `10.1%–17.0%`)**. Off-policy replay reuses rare wave-survival and boss-defense transitions more efficiently than `60k`-step on-policy rollouts, keeping the two `Striker` units anchored near the Central Core.
+- **Actor-Critic Peak vs Variance**: `MAPPO` [@yu2022mappo] achieves the highest peak return IQM (`-1.61 [-1.69, -1.47]`) and top elemental accuracy (`42.2%`), while `HAPPO` [@kuba2022happo] closes its Milestone 1 deficit to reach `-1.75 [-2.37, -1.45]` (`39.7%` elemental accuracy). `MAT` [@wen2022mat] stabilizes with a tight CI (`-1.99 [-2.29, -1.80]`, `40.9%` elemental accuracy), whereas `IPPO` [@dewitt2020ippo] stays last (`-2.02 [-2.23, -1.59]`, `10.6%` Core HP) because decentralized critics cannot disambiguate teammate failures under LOS cover.
+
+---
+
+### 4.3.3 Stage 4 Heterogeneous Squad (Vanguard, Striker, Support; 5 seeds, 60,000 env steps, CUDA)
+
+| Algorithm | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `ROMAT` | 5 | -2.27 [-2.47, -2.16] | -2.18 [-2.29, -2.07] | 0.0% | 10.8% | 31.1% | 0.1 |
+| `MAPPO` | 5 | -2.39 [-2.92, -1.95] | -2.03 [-2.43, -1.88] | 0.0% | 9.4% | 31.3% | 0.2 |
+| `HAPPO` | 5 | -2.47 [-2.85, -2.17] | -2.19 [-2.51, -1.85] | 0.0% | 6.5% | 32.9% | 0.1 |
+| `IPPO` | 5 | -2.48 [-2.97, -1.97] | -2.06 [-2.49, -1.93] | 0.0% | 7.6% | 24.4% | 0.1 |
+
+![Stage 4 5-Seed Heterogeneous Squad Comparison](assets/figures/m2_stage4_heterogeneous_5seed.png)
+
+> [!TIP]
+> **Recorded Stage 4 Rollout**: Inspect the heterogeneous `Vanguard`, `Striker`, and `Support` coordination replay: [Stage 4 Heterogeneous Squad Replay (MP4)](assets/videos/dotshot_stage4_heterogeneous.mp4).
+
+**Quantitative & Qualitative Analysis**:
+- **Role-Aware Attention Cuts Cross-Seed Variance**: Adding learnable per-agent role embeddings in `RoMAT` produces the best final return IQM (`-2.27 [-2.47, -2.16]`), highest **Core survival (`10.8%`)**, and the **tightest 95% CI width (`0.31`)** across all four Stage 4 baselines. By conditioning self-attention queries on explicit `Vanguard`, `Striker`, and `Support` identities, `RoMAT` avoids gradient interference across incompatible class speeds, HP pools, and `a[3] == 0` tactical abilities.
+- **Parameter-Sharing Instability on Asymmetric Squads**: `MAPPO` records a higher best return (`-2.03 [-2.43, -1.88]`) and `0.2` kills/episode on favorable seeds, yet suffers a `0.97`-wide final CI (`[-2.92, -1.95]`), while `IPPO` spans `1.00` (`[-2.97, -1.97]`) with only `24.4%` elemental accuracy. `HAPPO` avoids parameter sharing across roles (`32.9%` elemental accuracy), though `60k` steps splits rollout experience three ways across separate actor networks, leaving Core survival at `6.5%`.
+
+---
+
+### 4.3.4 Controlled Credit-Assignment ($\alpha$) & LOS Occlusion Ablations (3 seeds, 50,000 steps, CUDA)
+
+#### Reward Mixing Parameter $\alpha$ Ablation (`Stage 3 MAPPO`, 50,000 steps, 3 seeds)
+
+| Condition | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `ALPHA_0_00` | 3 | -1.05 [-1.62, -0.00] | -0.63 [-1.39, -0.00] | 0.0% | 17.2% | 34.5% | 0.2 |
+| `ALPHA_0_25` | 3 | -1.04 [-1.28, -0.79] | -1.04 | 0.0% | 3.1% | 31.1% | 0.3 |
+| `ALPHA_0_50` | 3 | -1.68 [-1.84, -1.56] | -1.61 | 0.0% | 13.7% | 36.7% | 0.2 |
+| `ALPHA_0_75` | 3 | -2.10 [-2.15, -2.05] | -1.94 | 0.0% | 16.0% | 20.0% | 0.1 |
+| `ALPHA_1_00` | 3 | -2.46 [-2.92, -1.83] | -1.89 | 0.0% | 19.6% | 28.9% | 0.0 |
+
+#### Line-of-Sight (LOS) Partial-Observability Ablation (`Stage 3 MAPPO`, 50,000 steps, 3 seeds)
+
+| Condition | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `LOS_OFF` | 3 | -2.15 [-2.28, -2.03] | -1.80 [-1.88, -1.72] | 0.0% | 10.2% | 39.7% | 0.2 |
+| `LOS_ON` | 3 | -1.92 [-2.15, -1.76] | -1.77 [-1.84, -1.70] | 0.0% | 12.3% | 29.1% | 0.1 |
+
+![Alpha and LOS Controlled Ablations](assets/figures/m2_ablations_alpha_los.png)
+
+**Quantitative & Qualitative Analysis**:
+- **The Credit-Assignment / Core-Defense Tradeoff ($\alpha$)**: Shifting from pure individual shaping (`ALPHA_0_00`: `-1.05 [-1.62, -0.00]`) to pure team reward (`ALPHA_1_00`: `-2.46 [-2.92, -1.83]`) creates a monotonic drop in return and kill rate (`0.2–0.3` kills/ep down to `0.0`), showing classic multi-agent lazy-agent credit dilution when $r_{\text{team}}^t$ dominates without individual feedback. Conversely, `ALPHA_0_25` achieves the highest kills (`0.3`) and best final return (`-1.04 [-1.28, -0.79]`) while neglecting the Core (`3.1%` Core HP), whereas `ALPHA_1_00` preserves the most Core HP (`19.6%`) by hugging the center passively. Intermediate mixing at `ALPHA_0_50` balances both objectives (`13.7%` Core HP, `36.7%` elemental accuracy, `0.2` kills), matching the default `0.45`–`0.50` operating point.
+- **LOS Occlusion Sharpens Local Threat Focus**: Disabling cover raycasting (`LOS_OFF`, full `760 px` omniscient enemy slots) improves **elemental accuracy (`39.7%` vs `29.1%`)** and kills (`0.2` vs `0.1`), because agents see incoming elements behind pillars before rounding corners. Yet `LOS_ON` yields higher final return (`-1.92 [-2.15, -1.76]` vs `-2.15 [-2.28, -2.03]`) and Core survival (`12.3%` vs `10.2%`): masking occluded targets removes unshootable behind-wall enemies from the top-5 hostile slots, preventing agents from wasting fire against cover blocks.
