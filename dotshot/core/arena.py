@@ -7,8 +7,9 @@ from dotshot.core.config import RectObstacle
 
 
 _LIDAR_ANGLES = np.linspace(0.0, 2.0 * np.pi, 8, endpoint=False, dtype=np.float32)
-_LIDAR_COS = np.cos(_LIDAR_ANGLES)
-_LIDAR_SIN = np.sin(_LIDAR_ANGLES)
+_LIDAR_DIRS: Tuple[Tuple[float, float], ...] = tuple(
+    (float(np.cos(a)), float(np.sin(a))) for a in _LIDAR_ANGLES
+)
 
 
 def clamp_to_arena(x: float, y: float, radius: float, width: float, height: float) -> Tuple[float, float]:
@@ -163,12 +164,9 @@ def compute_lidar_8(
 ) -> np.ndarray:
     """Compute 8 normalized obstacle/wall distances in [-1.0, 1.0]."""
     dists = np.empty(8, dtype=np.float32)
-    obs_list = list(obstacles)
-    for i in range(8):
-        dx = float(_LIDAR_COS[i])
-        dy = float(_LIDAR_SIN[i])
+    inv_max = 1.0 / max_range
+    for i, (dx, dy) in enumerate(_LIDAR_DIRS):
         best = max_range
-        # Arena wall intersection
         if dx > 1e-8:
             best = min(best, (width - x) / dx)
         elif dx < -1e-8:
@@ -178,9 +176,9 @@ def compute_lidar_8(
         elif dy < -1e-8:
             best = min(best, -y / dy)
 
-        for obs in obs_list:
+        for obs in obstacles:
             best = min(best, _ray_rect_distance(x, y, dx, dy, obs, max_range))
 
-        norm = max(0.0, min(1.0, best / max_range))
-        dists[i] = np.float32(norm * 2.0 - 1.0)
+        norm = max(0.0, min(1.0, best * inv_max))
+        dists[i] = norm * 2.0 - 1.0
     return dists

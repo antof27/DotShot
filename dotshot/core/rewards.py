@@ -81,23 +81,20 @@ def compute_decomposed_rewards(
             rewards[idx] = 0.0
             continue
 
-        miss_mult = min(3.0, 1.0 + 0.1 * episode_misses.get(idx, 0))
         r_indiv_raw = (
-            1.2 * ev.hits_correct
-            + 0.6 * ev.precision_hits
-            + 3.0 * ev.kills
-            + 8.0 * ev.boss_kills
-            + 3.0 * ev.shield_breaks
-            + 3.5 * ev.combo_kills
-            + 0.12 * ev.aim_alignment
-            + 0.15 * ev.trigger_discipline
+            2.2 * ev.hits_correct
+            + 0.8 * ev.precision_hits
+            + 5.0 * ev.kills
+            + 10.0 * ev.boss_kills
+            + 4.5 * ev.shield_breaks
+            + 5.0 * ev.combo_kills
+            + 0.20 * ev.aim_alignment
             + 0.05 * ev.shield_absorbed
             + 0.05 * ev.heal_utility
             + 0.8 * ev.mark_utility
             + (0.015 if ev.alive else 0.0)
-            - 0.25 * ev.hits_wrong
-            - 0.22 * miss_mult * ev.missed_bullets
-            - 0.02 * ev.well_aimed_misses
+            - 0.20 * ev.hits_wrong
+            - 0.04 * ev.missed_bullets
             - 2.0 * ev.ally_hits
             - 5.0 * ev.ally_kills
             - 0.20 * ev.damage_taken
