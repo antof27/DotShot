@@ -119,6 +119,7 @@ class SingleAgentEvalCallback(BaseCallback):
         eval_seed: int,
         logger: ExperimentLogger,
         max_steps: int | None = None,
+        optuna_trial: Any = None,
     ):
         super().__init__(verbose=0)
         self.stage = stage
@@ -127,6 +128,7 @@ class SingleAgentEvalCallback(BaseCallback):
         self.eval_seed = eval_seed
         self.exp_logger = logger
         self.max_steps = max_steps
+        self.optuna_trial = optuna_trial
         self.best_return = -float("inf")
         self.last_eval_step = 0
         self.start_time = time.time()
@@ -152,6 +154,12 @@ class SingleAgentEvalCallback(BaseCallback):
                 f"| Win: {metrics['eval/win_rate']*100:5.1f}% | Kills: {metrics['eval/kills']:4.1f} "
                 f"| ElemAcc: {metrics['eval/elemental_accuracy']*100:5.1f}% | FPS: {metrics['train/fps']:.0f}"
             )
+            if self.optuna_trial is not None:
+                import optuna
+
+                self.optuna_trial.report(metrics["eval/return_mean"], step=self.num_timesteps)
+                if self.optuna_trial.should_prune():
+                    raise optuna.TrialPruned()
         return True
 
 
@@ -164,7 +172,15 @@ def make_env_fn(stage: int, seed: int, rank: int, max_steps: int | None):
     return _init
 
 
-def run_experiment(cfg: Dict[str, Any], seed: int, device: str, steps_override: int | None = None) -> None:
+def run_experiment(
+    cfg: Dict[str, Any],
+    seed: int,
+    device: str,
+    steps_override: int | None = None,
+    run_dir_override: str | None = None,
+    optuna_trial: Any = None,
+    init_model_path: str | None = None,
+) -> Dict[str, Any]:
     torch.set_num_threads(1)
     seed_everything(seed)
 
@@ -175,10 +191,14 @@ def run_experiment(cfg: Dict[str, Any], seed: int, device: str, steps_override: 
     n_eval = int(cfg.get("n_eval_episodes", 16))
     eval_freq = int(cfg.get("eval_freq", max(10_000, total_steps // 10)))
     exp_name = cfg.get("exp_name", f"stage{stage}_{algo}")
-    run_dir = os.path.join("runs", f"stage{stage}", algo, exp_name, f"seed_{seed}")
+    run_dir = run_dir_override or os.path.join("runs", f"stage{stage}", algo, exp_name, f"seed_{seed}")
 
     resolved_cfg = {**cfg, "seed": seed, "device": device, "total_steps": total_steps}
+    if init_model_path:
+        resolved_cfg["init_model_path"] = init_model_path
     logger = ExperimentLogger(run_dir, resolved_cfg)
+    best_return = -float("inf")
+    final_metrics: Dict[str, float] = {}
 
     try:
         if algo in ("random", "heuristic"):
@@ -195,7 +215,7 @@ def run_experiment(cfg: Dict[str, Any], seed: int, device: str, steps_override: 
                 f"[{algo.upper()} seed={seed}] Return: {metrics['eval/return_mean']:.2f} "
                 f"| Win: {metrics['eval/win_rate']*100:.1f}% | Kills: {metrics['eval/kills']:.1f}"
             )
-            return
+            return {"run_dir": run_dir, "best_return": float(metrics["eval/return_mean"]), "final_metrics": metrics}
 
         num_envs = int(cfg.get("num_envs", 8))
         vec_type = cfg.get("vec_env", "subproc")
@@ -204,27 +224,42 @@ def run_experiment(cfg: Dict[str, Any], seed: int, device: str, steps_override: 
 
         lr = float(cfg.get("lr", 3e-4))
         lr_schedule = cosine_lr_schedule(lr, min_lr=1e-5) if cfg.get("cosine_lr", True) else lr
-        policy_kwargs = {"net_arch": dict(pi=[128, 128], vf=[128, 128]), "ortho_init": True}
+        arch = [int(h) for h in cfg.get("net_arch", [128, 128])]
+        policy_kwargs = {"net_arch": dict(pi=list(arch), vf=list(arch)), "ortho_init": True}
 
         if algo == "ppo":
-            model = PPO(
-                "MlpPolicy",
-                vec_env,
-                learning_rate=lr_schedule,
-                n_steps=int(cfg.get("n_steps", 512)),
-                batch_size=int(cfg.get("batch_size", 256)),
-                n_epochs=int(cfg.get("n_epochs", 8)),
-                gamma=float(cfg.get("gamma", 0.99)),
-                gae_lambda=float(cfg.get("gae_lambda", 0.95)),
-                clip_range=float(cfg.get("clip_range", 0.2)),
-                ent_coef=float(cfg.get("ent_coef", 0.01)),
-                vf_coef=float(cfg.get("vf_coef", 0.5)),
-                max_grad_norm=float(cfg.get("max_grad_norm", 0.5)),
-                policy_kwargs=policy_kwargs,
-                seed=seed,
-                device=device,
-                verbose=0,
-            )
+            if init_model_path:
+                model = PPO.load(
+                    init_model_path,
+                    env=vec_env,
+                    device=device,
+                    custom_objects={"learning_rate": lr_schedule},
+                )
+                model.learning_rate = lr_schedule
+                model.lr_schedule = lr_schedule if callable(lr_schedule) else (lambda _: lr)
+                model.ent_coef = float(cfg.get("ent_coef", model.ent_coef))
+                model.gamma = float(cfg.get("gamma", model.gamma))
+                model.gae_lambda = float(cfg.get("gae_lambda", model.gae_lambda))
+                model.n_epochs = int(cfg.get("n_epochs", model.n_epochs))
+            else:
+                model = PPO(
+                    "MlpPolicy",
+                    vec_env,
+                    learning_rate=lr_schedule,
+                    n_steps=int(cfg.get("n_steps", 512)),
+                    batch_size=int(cfg.get("batch_size", 256)),
+                    n_epochs=int(cfg.get("n_epochs", 8)),
+                    gamma=float(cfg.get("gamma", 0.99)),
+                    gae_lambda=float(cfg.get("gae_lambda", 0.95)),
+                    clip_range=float(cfg.get("clip_range", 0.2)),
+                    ent_coef=float(cfg.get("ent_coef", 0.01)),
+                    vf_coef=float(cfg.get("vf_coef", 0.5)),
+                    max_grad_norm=float(cfg.get("max_grad_norm", 0.5)),
+                    policy_kwargs=policy_kwargs,
+                    seed=seed,
+                    device=device,
+                    verbose=0,
+                )
         elif algo == "a2c":
             model = A2C(
                 "MlpPolicy",
@@ -254,16 +289,39 @@ def run_experiment(cfg: Dict[str, Any], seed: int, device: str, steps_override: 
         )
         init_metrics["train/fps"] = 0.0
         logger.log_metrics(0, init_metrics)
+        best_return = float(init_metrics["eval/return_mean"])
+        final_metrics = dict(init_metrics)
 
-        cb = SingleAgentEvalCallback(stage, eval_freq, n_eval, seed + 10_000, logger, max_steps)
-        model.learn(total_timesteps=total_steps, callback=cb, progress_bar=False)
-        model.save(str(logger.ckpt_dir / "final.zip"))
-        if not os.path.exists(logger.ckpt_dir / "best.zip"):
-            model.save(str(logger.ckpt_dir / "best.zip"))
-
-        vec_env.close()
+        cb = SingleAgentEvalCallback(
+            stage,
+            eval_freq,
+            n_eval,
+            seed + 10_000,
+            logger,
+            max_steps,
+            optuna_trial=optuna_trial,
+        )
+        cb.best_return = best_return
+        try:
+            model.learn(total_timesteps=total_steps, callback=cb, progress_bar=False)
+            final_metrics = evaluate_single_agent(
+                stage,
+                lambda _env, obs: model.predict(obs, deterministic=True)[0],
+                n_eval,
+                seed + 10_000,
+                max_steps,
+            )
+            logger.log_metrics(total_steps, final_metrics)
+            model.save(str(logger.ckpt_dir / "final.zip"))
+            if final_metrics["eval/return_mean"] >= cb.best_return or not os.path.exists(logger.ckpt_dir / "best.zip"):
+                model.save(str(logger.ckpt_dir / "best.zip"))
+                cb.best_return = max(cb.best_return, float(final_metrics["eval/return_mean"]))
+            best_return = cb.best_return
+        finally:
+            vec_env.close()
     finally:
         logger.close()
+    return {"run_dir": run_dir, "best_return": float(best_return), "final_metrics": final_metrics}
 
 
 def main() -> None:

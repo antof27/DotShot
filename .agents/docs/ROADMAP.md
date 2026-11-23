@@ -6,12 +6,12 @@ This roadmap tracks progress across all four coupled pillars of **DotShot Game v
 
 ## Milestone Status Overview
 
-| Milestone | Scope Summary | Simulator (`dotshot/`) | Benchmarks (`benchmarks/`) | Handbook (`docs/`) | Upstream (`Notelia`) | Status |
+| Milestone | Scope Summary | Simulator (`dotshot/`) | Benchmarks (`benchmarks/`) | Handbook (`docs/`) | Report / Upstream (`Notelia`) | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **M0** | Governance, Skills, Planning Docs | Audit complete | Audit complete | Structure planned | `origin/dev` inspected | **Complete** |
 | **M1** | Windows CUDA `.venv` + DotShot v2 + MARL Engine + SOTA Handbook + Initial Benchmarks + Notelia Skill | Stages 1–4 + Renderer + Tests | SB3 SA + Modular MARL Suite + `rliable` Eval + Stage 1–3 M1 Runs | Chapters 1–4 + `references.bib` + Validator + M1 Results | Portable EN skill + tests merged to local `dev` | **Complete** |
 | **M2** | Full 5-Seed MARL Sweeps & Credit-Assignment Ablations | Reward v2.1 + pre-cached LOS + `DummyMARLEnv` verified | Converged Stage 1–2 + 5-seed Stage 3 & Stage 4 sweeps + $\alpha$/LOS ablations | Complete Milestone 2 results, 300 DPI figures & Stage 4 MP4 in Ch. 3–4 | Doc validator gate passing (`0` errors) | **Complete** |
-| **M3** | Transfer Surgery v2, MARL HPO & Release Polish | Curriculum weight surgery v2 + MP4 gallery | Optuna MARL HPO presets | GitHub Pages launch & final citation audit | Release tag parity check | **Next** |
+| **M3** | Official SOTA Integration, Optuna BOHB, 1M-Step Sweeps & PDF Release | `enjoy.py` official MAT/HARL replay + Stage 4 MP4 | Pinned HARL & MAT submodules + BOHB + 1M x 3-seed sweeps | Ch. 4 M3 tables, BOHB figure, 4 converged figures, 2 MP4 replays | MiKTeX PDF (25 pages) + validator 0 errors | **Complete** |
 
 ---
 
@@ -42,7 +42,13 @@ This roadmap tracks progress across all four coupled pillars of **DotShot Game v
 - [x] 300 DPI `rliable` figures, Stage 4 MP4 replay, and quantitative + qualitative analysis published in `docs/03-dotshot-simulator-spec.md`, `docs/04-experiments-log.md`, and `README.md`.
 - [x] Repository layout refactored into PyPA `src/` (`src/dotshot/`, `src/benchmarks/`), unified `docs/` (reports, `results/`, `figures/`, `screenshots/`, `videos/`, `legacy_v1_plots/`), `scripts/`, and `legacy_v1/`.
 
-### Milestone 3: Transfer, Tuning & GitHub Release (Next)
-- [ ] Stage 2 -> Stage 3/4 checkpoint weight surgery v2 validated.
-- [ ] Optuna MARL hyperparameter tuning configs verified.
-- [ ] Docsify GitHub Pages site live-tested + final humanizer & BibTeX gate before push.
+### Milestone 3: Official SOTA, Optuna BOHB & PDF Release (Complete)
+- [x] Pinned `third_party/HARL` (Zhong et al., 2024) and `third_party/Multi-Agent-Transformer` (Wen et al., 2022) submodules added and verified on the RTX 3060 CUDA environment.
+- [x] HARL MAPPO/HAPPO/HATRPO/HAA2C adapters run on native `MultiDiscrete([3, 3, 32, 4])`; MAT runs through the 8-D `Box` adapter in `src/benchmarks/official/mat_dotshot_env.py`.
+- [x] Optuna BOHB studies completed with 16 trials each (`TPESampler(multivariate=True, seed=42)` plus `HyperbandPruner(reduction_factor=3)`); summary archived in `docs/results/m3_bohb_summary.json`.
+- [x] Stage 1 PPO and Stage 2 `PPO_TRANSFER` warm start tuned and trained for 1,000,000 steps on 3 seeds.
+- [x] Stage 3 and Stage 4 HARL and MAT benchmarks trained for 1,000,000 steps on 3 seeds after aligning `harl_runner.py` to per-agent mean reward.
+- [x] `scripts/enjoy.py` gained live `--official-mat` and `--official-harl` playback plus MP4 recording.
+- [x] Chapter 4 M3 section, README highlights, BOHB figure, four converged figures, and two MP4 replays published.
+- [x] MiKTeX report compiled to `docs/paper/dotshot_marl_report.pdf` and linked from `README.md`.
+- [x] `scripts/validate_docs.py` passes with 0 broken links, 0 prose violations, and 0 undefined citations.

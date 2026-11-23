@@ -92,8 +92,12 @@ def summarize_stage(stage_dir: str, n_boot: int = 2000) -> Tuple[Dict[str, Any],
     for algo, trajs in grouped.items():
         algo_summary: Dict[str, Any] = {"num_seeds": len(trajs)}
         for mk in metrics_keys:
-            final_vals = [float(tr[-1].get(mk, 0.0)) for tr in trajs]
-            best_vals = [float(max(r.get(mk, -1e9) for r in tr)) for tr in trajs]
+            if mk == "eval/kills":
+                final_vals = [float(tr[-1].get("eval/kills", tr[-1].get("eval/kills_mean", 0.0))) for tr in trajs]
+                best_vals = [float(max(r.get("eval/kills", r.get("eval/kills_mean", -1e9)) for r in tr)) for tr in trajs]
+            else:
+                final_vals = [float(tr[-1].get(mk, 0.0)) for tr in trajs]
+                best_vals = [float(max(r.get(mk, -1e9) for r in tr)) for tr in trajs]
             algo_summary[mk] = {
                 "final": compute_rliable_stats(final_vals, n_boot=n_boot),
                 "best": compute_rliable_stats(best_vals, n_boot=n_boot),

@@ -17,10 +17,19 @@ models_marl/*
 *.zip
 *.db
 *.sqlite
+runs/optuna_*.db*
 run_tuning.sh
+docs/paper/*.aux
+docs/paper/*.bbl
+docs/paper/*.blg
+docs/paper/*.log
+docs/paper/*.out
+docs/paper/*.toc
+docs/paper/*.synctex.gz
 
-# Keep curated handbook assets and metric summaries tracked
+# Keep curated handbook assets, metric summaries, and compiled PDF tracked
 !docs/assets/
 !docs/assets/**
 !docs/results/
 !docs/results/**
+!docs/paper/dotshot_marl_report.pdf
