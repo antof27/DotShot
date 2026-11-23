@@ -67,8 +67,11 @@ def plot_stage_curves(
             grid = np.linspace(0, max_step, num=40)
             interp_curves = []
             for tr in trajs:
-                xs = np.array([r["step"] for r in tr], dtype=np.float64)
-                ys = np.array([r.get(metric, 0.0) for r in tr], dtype=np.float64)
+                pts = [(r["step"], r[metric]) for r in tr if metric in r]
+                if not pts:
+                    continue
+                xs = np.array([p[0] for p in pts], dtype=np.float64)
+                ys = np.array([p[1] for p in pts], dtype=np.float64)
                 if len(xs) == 1:
                     interp_curves.append(np.full_like(grid, ys[0]))
                 else:

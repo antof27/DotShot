@@ -1,6 +1,6 @@
 # 4. Living Experiments and Benchmark Log
 
-This chapter records every empirical benchmark run on **DotShot Game v2** in chronological milestone order. All numbers come directly from logged `metrics.jsonl` trajectories and automated `src/benchmarks/eval/evaluate.py` summaries (with Milestone 2 JSON exports archived under [docs/results/](results/)).
+This chapter records every empirical benchmark run on **DotShot Game v2** in chronological milestone order. All numbers come directly from logged `metrics.jsonl` trajectories and automated `src/benchmarks/eval/evaluate.py` summaries (with Milestone 2 and Milestone 3 JSON exports archived under [docs/results/](results/)).
 
 ---
 
@@ -174,3 +174,101 @@ Milestone 2 applies **Reward Shaping v2.1** (smooth `(best_dot ** 2) * 0.25` aim
 
 > [!NOTE]
 > **Archived Milestone 2 Metric Summaries (`docs/results/`)**: [Stage 1](results/m2_stage1_eval.json) · [Stage 2](results/m2_stage2_eval.json) · [Stage 3](results/m2_stage3_eval.json) · [Stage 4](results/m2_stage4_eval.json) · [Alpha Ablation](results/m2_alpha_eval.json) · [LOS Ablation](results/m2_los_eval.json)
+
+---
+
+## 4.4 Milestone 3: Official SOTA Integration, Optuna BOHB, and 1M-Step Converged Benchmarks
+
+Milestone 3 replaces the local headline MARL implementations with pinned upstream code. `third_party/HARL` [@zhong2024harl] supplies MAPPO, HAPPO, HATRPO, and HAA2C on DotShot's native `MultiDiscrete([3, 3, 32, 4])` action space. `third_party/Multi-Agent-Transformer` [@wen2022mat] supplies MAT through an 8-D `Box` action adapter in `src/benchmarks/official/mat_dotshot_env.py`, which maps continuous outputs back to the four factored heads. Stages 1 and 2 keep Stable-Baselines3 PPO [@schulman2017ppo]. Every learned row in Sections 4.4.2 through 4.4.5 comes from a 1,000,000-step run on 3 seeds, with IQM and 95% bootstrap CIs from `docs/results/m3_stage{1..4}_official_eval.json`; `HEURISTIC` and `RANDOM` are scripted baselines evaluated on the same seeds.
+
+### 4.4.1 Optuna BOHB Hyperparameter Search
+
+Each study ran 16 trials with `TPESampler(multivariate=True, seed=42)` and `HyperbandPruner(min_resource=50_000, max_resource=350_000, reduction_factor=3)`, following BOHB [@falkner2018bohb] inside Optuna [@akiba2019optuna]. Trials report intermediate objectives every 50,000 environment steps.
+
+| Study | Best objective | Best trial | Complete / pruned | Top parameter importances |
+| :--- | :---: | :---: | :---: | :--- |
+| `sb3_ppo_stage1` | `14.57` | 14 | 6 / 10 | `ent_coef` 0.530, `lr` 0.433 |
+| `sb3_ppo_stage2` | `9.54` | 4 (`warm_start=True` from Stage 1 trial 14) | 5 / 11 | `ent_coef` 0.897, `lr` 0.083 |
+| `official_mat_stage3` | `-0.777` | 3 (`n_block=2`, `n_embd=64`, `n_head=2`, `lr=3.63e-4`, `ppo_epoch=8`) | 4 / 12 | `entropy_coef` 0.555, `lr` 0.368 |
+| `harl_mappo_stage3` | `-2.799` | 10 | 5 / 11 | `lr` 0.637, `critic_lr` 0.232 |
+
+![Optuna BOHB Tuning and Parameter Importance](assets/figures/m3_bohb_tuning.png)
+
+BOHB objectives come from the 350,000-step trial ceiling; the converged tables below use 1,000,000 steps. Entropy regularization dominates both single-agent studies: `ent_coef` carries 0.530 of the Stage 1 importance and 0.897 at Stage 2. MAT splits importance between `entropy_coef` (0.555) and `lr` (0.368), while HARL MAPPO leans on the actor and critic learning rates (`lr` 0.637, `critic_lr` 0.232).
+
+The `harl_mappo_stage3` value is a raw 2-agent team-sum objective. The same policy scores `-1.40` per agent. `src/benchmarks/official/harl_runner.py` was aligned to per-agent mean reward before every 1M-step Stage 3 and Stage 4 run, so the converged tables below compare HARL and MAT on the same reward scale.
+
+### 4.4.2 Stage 1 Single-Agent Fundamentals (1,000,000 steps, 3 seeds)
+
+| Algorithm | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `HEURISTIC` | 3 | 37.68 [35.34, 39.21] | 37.68 [35.34, 39.21] | 97.9% | 100.0% | 100.0% | 21.1 |
+| `PPO` | 3 | 14.95 [7.94, 18.93] | 17.66 [14.86, 19.20] | 50.0% | 100.0% | 100.0% | 8.7 |
+| `RANDOM` | 3 | -2.20 [-2.22, -2.18] | -2.20 [-2.22, -2.18] | 0.0% | 100.0% | 42.1% | 0.0 |
+
+![Stage 1 Converged Official PPO](assets/figures/m3_stage1_official_converged.png)
+
+PPO climbs to `14.95 [7.94, 18.93]` final return IQM with a `50.0%` win rate, `100.0%` elemental accuracy, and `8.7` kills per episode. The 200k-step Milestone 2 run reached `3.31 [1.72, 6.41]` and `38.9%` wins on the same stage. The scripted `HEURISTIC` stays ahead at `37.68 [35.34, 39.21]` and `21.1` kills per episode.
+
+### 4.4.3 Stage 2 Elemental Mastery with Transfer (1,000,000 steps, 3 seeds)
+
+| Algorithm | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `HEURISTIC` | 3 | 18.84 [18.07, 20.32] | 18.84 [18.07, 20.32] | 0.0% | 100.0% | 99.7% | 10.9 |
+| `PPO` | 3 | 2.81 [0.85, 5.64] | 4.00 [2.65, 6.30] | 13.9% | 100.0% | 39.8% | 1.6 |
+| `PPO_TRANSFER` | 3 | 8.91 [7.89, 9.44] | 10.12 [8.44, 12.01] | 66.7% | 100.0% | 36.1% | 3.5 |
+| `RANDOM` | 3 | -1.99 [-2.03, -1.95] | -1.99 [-2.03, -1.95] | 0.0% | 100.0% | 27.6% | 0.0 |
+
+![Stage 2 Converged Official PPO Transfer](assets/figures/m3_stage2_official_converged.png)
+
+`PPO_TRANSFER` starts from the converged Stage 1 checkpoint (`runs/m3_official/stage1/ppo/seed_1/checkpoints/best.zip`) using the Stage 2 BOHB `warm_start=True` configuration. It reaches `8.91 [7.89, 9.44]` final return IQM, a `66.7%` win rate, and `3.5` kills per episode. Scratch `PPO` records `2.81 [0.85, 5.64]` and `13.9%` wins, and `RANDOM` stays at `-1.99 [-2.03, -1.95]`. The un-evasive `HEURISTIC` collects `18.84 [18.07, 20.32]` but wins `0.0%` of episodes because it does not dodge incoming fire.
+
+### 4.4.4 Stage 3 Homogeneous Cooperative Defense (1,000,000 steps, 3 seeds)
+
+| Algorithm | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `HARL_HAA2C` | 3 | -2.06 [-2.12, -1.96] | -1.50 [-1.81, -1.09] | 0.0% | 7.9% | 45.1% | 0.2 |
+| `HARL_HAPPO` | 3 | -2.17 [-2.38, -1.90] | -1.82 [-2.00, -1.62] | 0.0% | 9.9% | 41.9% | 0.2 |
+| `HARL_HATRPO` | 3 | -2.15 [-2.22, -2.11] | -1.90 [-1.98, -1.81] | 0.0% | 1.5% | 42.2% | 0.3 |
+| `HARL_MAPPO` | 3 | -2.12 [-2.43, -1.83] | -1.66 [-1.76, -1.47] | 0.0% | 11.8% | 37.5% | 0.2 |
+| `OFFICIAL_MAT` | 3 | -1.62 [-1.67, -1.56] | -1.29 [-1.43, -1.20] | 0.0% | 1.4% | 34.9% | 0.9 |
+
+![Stage 3 Converged Official HARL and MAT](assets/figures/m3_stage3_official_converged.png)
+
+`OFFICIAL_MAT` leads final return (`-1.62 [-1.67, -1.56]`), best return (`-1.29 [-1.43, -1.20]`), and kills (`0.9` per episode). `HARL_MAPPO` keeps the most Core HP (`11.8%`), and `HARL_HAA2C` reaches the highest elemental accuracy (`45.1%`). All five algorithms stay at `0.0%` win rate on this wave, so final return and Core retention separate them.
+
+> [!TIP]
+> Stage 3 best replay: [m3_official_stage3_best.mp4](assets/videos/m3_official_stage3_best.mp4) (`357` frames, `Core HP: 76.7%`). Evaluation summary: [m3_stage3_official_eval.json](results/m3_stage3_official_eval.json).
+
+### 4.4.5 Stage 4 Heterogeneous Squad (Vanguard, Striker, Support; 1,000,000 steps, 3 seeds)
+
+| Algorithm | Seeds | Final Return IQM [95% CI] | Best Return IQM [95% CI] | Win Rate (%) | Core HP (%) | Elem Acc (%) | Kills / Ep |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `HARL_HAA2C` | 3 | -2.50 [-2.54, -2.45] | -1.99 [-2.13, -1.74] | 0.0% | 3.4% | 34.4% | 0.1 |
+| `HARL_HAPPO` | 3 | -2.54 [-2.94, -2.22] | -2.32 [-2.46, -2.22] | 0.0% | 2.1% | 31.9% | 0.4 |
+| `HARL_HATRPO` | 3 | -2.53 [-2.68, -2.44] | -2.15 [-2.48, -1.98] | 0.0% | 1.8% | 33.5% | 0.7 |
+| `HARL_MAPPO` | 3 | -2.80 [-2.86, -2.74] | -2.38 [-2.57, -2.22] | 0.0% | 1.7% | 31.8% | 0.2 |
+| `OFFICIAL_MAT` | 3 | -2.29 [-2.34, -2.19] | -1.61 [-1.73, -1.44] | 0.0% | 4.7% | 33.1% | 0.9 |
+
+![Stage 4 Converged Official HARL and MAT](assets/figures/m3_stage4_official_converged.png)
+
+`OFFICIAL_MAT` leads final return (`-2.29 [-2.34, -2.19]`), best return (`-1.61 [-1.73, -1.44]`), Core HP (`4.7%`), and kills (`0.9` per episode). The heterogeneous HARL algorithms beat shared-parameter `HARL_MAPPO` (`-2.80`) on the asymmetric squad: `HARL_HAA2C` `-2.50`, `HARL_HATRPO` `-2.53`, and `HARL_HAPPO` `-2.54`.
+
+> [!TIP]
+> Stage 4 best replay: [m3_official_stage4_best.mp4](assets/videos/m3_official_stage4_best.mp4) (`450` frames, `Score: 300`, `Core HP: 86.7%`). Evaluation summary: [m3_stage4_official_eval.json](results/m3_stage4_official_eval.json).
+
+### 4.4.6 Reproduction Commands and Archived Summaries
+
+```powershell
+# Full official 1M-step x 3-seed suite with IQM export
+.\.venv\Scripts\python.exe scripts\run_m3_official_suite.py --part all --seeds 0 1 2 --steps 1000000 --device cuda
+
+# Optuna BOHB studies (16 trials each, seed 42)
+.\.venv\Scripts\python.exe -m benchmarks.official.bohb_tune --study all --trials 16 --device cuda --db runs\optuna_bohb_mat.db --stage1-best-ckpt runs\bohb\sb3_ppo_stage1\trial_14\checkpoints\best.zip
+
+# Replay official checkpoints (interactive, or add --record for MP4)
+.\.venv\Scripts\python.exe scripts\enjoy.py --stage 3 --official-mat runs\m3_official\stage3\official_mat\seed_0\checkpoints\best
+.\.venv\Scripts\python.exe scripts\enjoy.py --stage 3 --official-harl runs\m3_official\stage3\harl_mappo\seed_0\checkpoints\best
+```
+
+Archived Milestone 3 summaries under `docs/results/`: [Stage 1](results/m3_stage1_official_eval.json), [Stage 2](results/m3_stage2_official_eval.json), [Stage 3](results/m3_stage3_official_eval.json), [Stage 4](results/m3_stage4_official_eval.json), and [BOHB](results/m3_bohb_summary.json).

@@ -1,0 +1,1242 @@
+{
+  "studies": {
+    "sb3_ppo_stage1": {
+      "best_value": 14.566308454904203,
+      "best_params": {
+        "lr": 0.0005518055645184727,
+        "n_steps": 256,
+        "batch_size": 128,
+        "n_epochs": 10,
+        "ent_coef": 0.004441130830622215,
+        "clip_range": 0.25,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "net_arch_size": 128
+      },
+      "best_trial": 14,
+      "best_run_dir": "runs/bohb/sb3_ppo_stage1/trial_14",
+      "n_complete": 6,
+      "n_pruned": 10,
+      "param_importances": {
+        "ent_coef": 0.5299287969837578,
+        "lr": 0.43292816707406867,
+        "clip_range": 0.015561952334457526,
+        "gamma": 0.010958916199342961,
+        "n_epochs": 0.002989406888124236,
+        "gae_lambda": 0.0026481750427768944,
+        "batch_size": 0.002294273003479072,
+        "n_steps": 0.002294273003479072,
+        "net_arch_size": 0.00039603947051378754
+      },
+      "trials": [
+        {
+          "number": 0,
+          "state": "COMPLETE",
+          "value": 6.654981743289908,
+          "params": {
+            "lr": 0.00023688639503640813,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 4,
+            "ent_coef": 0.0276523786324477,
+            "clip_range": 0.15,
+            "gamma": 0.995,
+            "gae_lambda": 0.98,
+            "net_arch_size": 256
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage1/trial_0"
+        },
+        {
+          "number": 1,
+          "state": "PRUNED",
+          "value": -2.181300466583257,
+          "params": {
+            "lr": 0.0002324672848950435,
+            "n_steps": 512,
+            "batch_size": 256,
+            "n_epochs": 10,
+            "ent_coef": 0.02733388665640455,
+            "clip_range": 0.15,
+            "gamma": 0.985,
+            "gae_lambda": 0.98,
+            "net_arch_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 2,
+          "state": "PRUNED",
+          "value": -2.7578147077204833,
+          "params": {
+            "lr": 0.0002049798052095018,
+            "n_steps": 512,
+            "batch_size": 128,
+            "n_epochs": 8,
+            "ent_coef": 0.003400350826442219,
+            "clip_range": 0.25,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 3,
+          "state": "COMPLETE",
+          "value": 5.368194315154033,
+          "params": {
+            "lr": 0.0009702573394120733,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 4,
+            "ent_coef": 0.020707057549315313,
+            "clip_range": 0.15,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "net_arch_size": 256
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage1/trial_3"
+        },
+        {
+          "number": 4,
+          "state": "PRUNED",
+          "value": -1.8807063115713667,
+          "params": {
+            "lr": 0.0005764810670114667,
+            "n_steps": 512,
+            "batch_size": 128,
+            "n_epochs": 8,
+            "ent_coef": 0.007927852112590408,
+            "clip_range": 0.15,
+            "gamma": 0.985,
+            "gae_lambda": 0.98,
+            "net_arch_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 5,
+          "state": "PRUNED",
+          "value": -1.9652970233891225,
+          "params": {
+            "lr": 0.0007438075634395305,
+            "n_steps": 1024,
+            "batch_size": 512,
+            "n_epochs": 10,
+            "ent_coef": 0.018326942262438736,
+            "clip_range": 0.15,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "net_arch_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 6,
+          "state": "COMPLETE",
+          "value": 12.837805711262787,
+          "params": {
+            "lr": 0.0002310093735409803,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 6,
+            "ent_coef": 0.00425347286547249,
+            "clip_range": 0.15,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage1/trial_6"
+        },
+        {
+          "number": 7,
+          "state": "COMPLETE",
+          "value": 11.681164132140829,
+          "params": {
+            "lr": 0.00042885041096271594,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 8,
+            "ent_coef": 0.008003835706370572,
+            "clip_range": 0.2,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage1/trial_7"
+        },
+        {
+          "number": 8,
+          "state": "PRUNED",
+          "value": -2.698125026749393,
+          "params": {
+            "lr": 0.0001811096651915227,
+            "n_steps": 512,
+            "batch_size": 128,
+            "n_epochs": 6,
+            "ent_coef": 0.005149111828496862,
+            "clip_range": 0.2,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "net_arch_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 9,
+          "state": "PRUNED",
+          "value": -2.692356094326445,
+          "params": {
+            "lr": 0.00046078864571905956,
+            "n_steps": 1024,
+            "batch_size": 128,
+            "n_epochs": 10,
+            "ent_coef": 0.011616025850100072,
+            "clip_range": 0.15,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 10,
+          "state": "PRUNED",
+          "value": -2.1028952979067173,
+          "params": {
+            "lr": 0.0003418907300434983,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 6,
+            "ent_coef": 0.0020264000469740187,
+            "clip_range": 0.15,
+            "gamma": 0.995,
+            "gae_lambda": 0.98,
+            "net_arch_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 11,
+          "state": "PRUNED",
+          "value": -2.57226448222592,
+          "params": {
+            "lr": 0.0004202495080578702,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 8,
+            "ent_coef": 0.01296350561569838,
+            "clip_range": 0.2,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 12,
+          "state": "COMPLETE",
+          "value": 13.043286270937381,
+          "params": {
+            "lr": 0.00046238374943203094,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 10,
+            "ent_coef": 0.005474937388973742,
+            "clip_range": 0.2,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage1/trial_12"
+        },
+        {
+          "number": 13,
+          "state": "PRUNED",
+          "value": -2.718402746867087,
+          "params": {
+            "lr": 0.00015834932128519827,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 6,
+            "ent_coef": 0.00956022917257811,
+            "clip_range": 0.15,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 14,
+          "state": "COMPLETE",
+          "value": 14.566308454904203,
+          "params": {
+            "lr": 0.0005518055645184727,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 10,
+            "ent_coef": 0.004441130830622215,
+            "clip_range": 0.25,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage1/trial_14"
+        },
+        {
+          "number": 15,
+          "state": "PRUNED",
+          "value": 1.606760481135403,
+          "params": {
+            "lr": 0.0009599076133554955,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 10,
+            "ent_coef": 0.0032685615053056716,
+            "clip_range": 0.2,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128
+          },
+          "run_dir": null
+        }
+      ]
+    },
+    "sb3_ppo_stage2": {
+      "best_value": 9.539207773738488,
+      "best_params": {
+        "lr": 0.00010750512925563073,
+        "n_steps": 256,
+        "batch_size": 128,
+        "n_epochs": 4,
+        "ent_coef": 0.0030948595328786957,
+        "clip_range": 0.15,
+        "gamma": 0.985,
+        "gae_lambda": 0.92,
+        "net_arch_size": 128,
+        "warm_start": true
+      },
+      "best_trial": 4,
+      "best_run_dir": "runs/bohb/sb3_ppo_stage2/trial_4",
+      "n_complete": 5,
+      "n_pruned": 11,
+      "param_importances": {
+        "ent_coef": 0.8965940595875539,
+        "lr": 0.08339562334389423,
+        "batch_size": 0.004835508858025891,
+        "n_steps": 0.0031551682015698353,
+        "gae_lambda": 0.0031551682015698353,
+        "warm_start": 0.003087884816623238,
+        "clip_range": 0.00293966634542397,
+        "n_epochs": 0.002569638413831065,
+        "net_arch_size": 0.00025237520135874255,
+        "gamma": 1.4907030149214735e-05
+      },
+      "trials": [
+        {
+          "number": 0,
+          "state": "COMPLETE",
+          "value": 7.10817812779375,
+          "params": {
+            "lr": 0.00023688639503640813,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 4,
+            "ent_coef": 0.0276523786324477,
+            "clip_range": 0.15,
+            "gamma": 0.995,
+            "gae_lambda": 0.98,
+            "net_arch_size": 256,
+            "warm_start": true
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage2/trial_0"
+        },
+        {
+          "number": 1,
+          "state": "PRUNED",
+          "value": -1.3962511882683595,
+          "params": {
+            "lr": 0.0006097839109531517,
+            "n_steps": 1024,
+            "batch_size": 256,
+            "n_epochs": 8,
+            "ent_coef": 0.00456334797616324,
+            "clip_range": 0.2,
+            "gamma": 0.99,
+            "gae_lambda": 0.92,
+            "net_arch_size": 256,
+            "warm_start": false
+          },
+          "run_dir": null
+        },
+        {
+          "number": 2,
+          "state": "PRUNED",
+          "value": -0.282032948128486,
+          "params": {
+            "lr": 0.0009323621351781479,
+            "n_steps": 512,
+            "batch_size": 256,
+            "n_epochs": 10,
+            "ent_coef": 0.004170241636872715,
+            "clip_range": 0.15,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128,
+            "warm_start": false
+          },
+          "run_dir": null
+        },
+        {
+          "number": 3,
+          "state": "PRUNED",
+          "value": 4.6084168400143835,
+          "params": {
+            "lr": 0.0005358055009231865,
+            "n_steps": 256,
+            "batch_size": 256,
+            "n_epochs": 4,
+            "ent_coef": 0.014424921039779718,
+            "clip_range": 0.2,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128,
+            "warm_start": true
+          },
+          "run_dir": null
+        },
+        {
+          "number": 4,
+          "state": "COMPLETE",
+          "value": 9.539207773738488,
+          "params": {
+            "lr": 0.00010750512925563073,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 4,
+            "ent_coef": 0.0030948595328786957,
+            "clip_range": 0.15,
+            "gamma": 0.985,
+            "gae_lambda": 0.92,
+            "net_arch_size": 128,
+            "warm_start": true
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage2/trial_4"
+        },
+        {
+          "number": 5,
+          "state": "PRUNED",
+          "value": 4.1905814063818605,
+          "params": {
+            "lr": 0.000267366991109841,
+            "n_steps": 512,
+            "batch_size": 128,
+            "n_epochs": 8,
+            "ent_coef": 0.008150328458539819,
+            "clip_range": 0.25,
+            "gamma": 0.985,
+            "gae_lambda": 0.92,
+            "net_arch_size": 128,
+            "warm_start": true
+          },
+          "run_dir": null
+        },
+        {
+          "number": 6,
+          "state": "PRUNED",
+          "value": 1.6319082948007566,
+          "params": {
+            "lr": 0.0008095913996298555,
+            "n_steps": 1024,
+            "batch_size": 128,
+            "n_epochs": 4,
+            "ent_coef": 0.01108356202723359,
+            "clip_range": 0.15,
+            "gamma": 0.985,
+            "gae_lambda": 0.98,
+            "net_arch_size": 256,
+            "warm_start": true
+          },
+          "run_dir": null
+        },
+        {
+          "number": 7,
+          "state": "PRUNED",
+          "value": -1.970900054965514,
+          "params": {
+            "lr": 0.00014940544624243666,
+            "n_steps": 1024,
+            "batch_size": 256,
+            "n_epochs": 4,
+            "ent_coef": 0.01828764918662831,
+            "clip_range": 0.15,
+            "gamma": 0.995,
+            "gae_lambda": 0.92,
+            "net_arch_size": 256,
+            "warm_start": false
+          },
+          "run_dir": null
+        },
+        {
+          "number": 8,
+          "state": "PRUNED",
+          "value": -2.561809341187917,
+          "params": {
+            "lr": 0.0004385626537779657,
+            "n_steps": 1024,
+            "batch_size": 128,
+            "n_epochs": 4,
+            "ent_coef": 0.013024524884980238,
+            "clip_range": 0.25,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "net_arch_size": 128,
+            "warm_start": false
+          },
+          "run_dir": null
+        },
+        {
+          "number": 9,
+          "state": "PRUNED",
+          "value": -2.0234170548534203,
+          "params": {
+            "lr": 0.0001753838677550486,
+            "n_steps": 256,
+            "batch_size": 256,
+            "n_epochs": 10,
+            "ent_coef": 0.00427803089784523,
+            "clip_range": 0.2,
+            "gamma": 0.99,
+            "gae_lambda": 0.98,
+            "net_arch_size": 256,
+            "warm_start": false
+          },
+          "run_dir": null
+        },
+        {
+          "number": 10,
+          "state": "PRUNED",
+          "value": -1.1062678419683782,
+          "params": {
+            "lr": 0.00028798864749032203,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 4,
+            "ent_coef": 0.0030553359107064622,
+            "clip_range": 0.15,
+            "gamma": 0.985,
+            "gae_lambda": 0.92,
+            "net_arch_size": 256,
+            "warm_start": false
+          },
+          "run_dir": null
+        },
+        {
+          "number": 11,
+          "state": "PRUNED",
+          "value": 1.6021120809968432,
+          "params": {
+            "lr": 0.00024928344529415,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 10,
+            "ent_coef": 0.010516505509139884,
+            "clip_range": 0.15,
+            "gamma": 0.995,
+            "gae_lambda": 0.98,
+            "net_arch_size": 256,
+            "warm_start": true
+          },
+          "run_dir": null
+        },
+        {
+          "number": 12,
+          "state": "COMPLETE",
+          "value": 8.485140466681072,
+          "params": {
+            "lr": 0.00011764482936834732,
+            "n_steps": 256,
+            "batch_size": 512,
+            "n_epochs": 4,
+            "ent_coef": 0.013392303571199126,
+            "clip_range": 0.15,
+            "gamma": 0.985,
+            "gae_lambda": 0.92,
+            "net_arch_size": 128,
+            "warm_start": true
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage2/trial_12"
+        },
+        {
+          "number": 13,
+          "state": "COMPLETE",
+          "value": 9.173351336209445,
+          "params": {
+            "lr": 0.00011144436402751633,
+            "n_steps": 1024,
+            "batch_size": 512,
+            "n_epochs": 4,
+            "ent_coef": 0.009121945616670303,
+            "clip_range": 0.15,
+            "gamma": 0.985,
+            "gae_lambda": 0.92,
+            "net_arch_size": 128,
+            "warm_start": true
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage2/trial_13"
+        },
+        {
+          "number": 14,
+          "state": "COMPLETE",
+          "value": 8.213979030008385,
+          "params": {
+            "lr": 0.0001091253918398041,
+            "n_steps": 256,
+            "batch_size": 128,
+            "n_epochs": 4,
+            "ent_coef": 0.002440135811343345,
+            "clip_range": 0.15,
+            "gamma": 0.99,
+            "gae_lambda": 0.92,
+            "net_arch_size": 128,
+            "warm_start": true
+          },
+          "run_dir": "runs/bohb/sb3_ppo_stage2/trial_14"
+        },
+        {
+          "number": 15,
+          "state": "PRUNED",
+          "value": 5.518930342584915,
+          "params": {
+            "lr": 0.0001809381945269007,
+            "n_steps": 256,
+            "batch_size": 512,
+            "n_epochs": 6,
+            "ent_coef": 0.005553005259903673,
+            "clip_range": 0.15,
+            "gamma": 0.985,
+            "gae_lambda": 0.92,
+            "net_arch_size": 128,
+            "warm_start": true
+          },
+          "run_dir": null
+        }
+      ]
+    },
+    "official_mat_stage3": {
+      "best_value": -0.7767680763912116,
+      "best_params": {
+        "lr": 0.0003629913566456408,
+        "ppo_epoch": 8,
+        "clip_param": 0.2,
+        "entropy_coef": 0.027628035240548847,
+        "n_block": 2,
+        "n_embd": 64,
+        "n_head": 2,
+        "gamma": 0.995
+      },
+      "best_trial": 3,
+      "best_run_dir": "runs/bohb/official_mat_stage3/trial_3",
+      "n_complete": 4,
+      "n_pruned": 12,
+      "param_importances": {
+        "entropy_coef": 0.5549915658723517,
+        "lr": 0.36788530490604693,
+        "ppo_epoch": 0.06849860322533517,
+        "clip_param": 0.0037127658298313445,
+        "n_embd": 0.0029834725418323806,
+        "n_block": 0.00127863108935576,
+        "gamma": 0.0006445912168394686,
+        "n_head": 5.065318407184486e-06
+      },
+      "trials": [
+        {
+          "number": 0,
+          "state": "COMPLETE",
+          "value": -0.9829861706311931,
+          "params": {
+            "lr": 0.00020726363966792186,
+            "ppo_epoch": 15,
+            "clip_param": 0.1,
+            "entropy_coef": 0.0030513623796137,
+            "n_block": 2,
+            "n_embd": 128,
+            "n_head": 4,
+            "gamma": 0.985
+          },
+          "run_dir": "runs/bohb/official_mat_stage3/trial_0"
+        },
+        {
+          "number": 1,
+          "state": "COMPLETE",
+          "value": -0.9829861706311931,
+          "params": {
+            "lr": 0.0001428876822877738,
+            "ppo_epoch": 8,
+            "clip_param": 0.1,
+            "entropy_coef": 0.010486361783805704,
+            "n_block": 2,
+            "n_embd": 128,
+            "n_head": 2,
+            "gamma": 0.99
+          },
+          "run_dir": "runs/bohb/official_mat_stage3/trial_1"
+        },
+        {
+          "number": 2,
+          "state": "PRUNED",
+          "value": -2.217701462937839,
+          "params": {
+            "lr": 0.00032616320316733834,
+            "ppo_epoch": 6,
+            "clip_param": 0.25,
+            "entropy_coef": 0.01785578922006209,
+            "n_block": 1,
+            "n_embd": 64,
+            "n_head": 4,
+            "gamma": 0.99
+          },
+          "run_dir": null
+        },
+        {
+          "number": 3,
+          "state": "COMPLETE",
+          "value": -0.7767680763912116,
+          "params": {
+            "lr": 0.0003629913566456408,
+            "ppo_epoch": 8,
+            "clip_param": 0.2,
+            "entropy_coef": 0.027628035240548847,
+            "n_block": 2,
+            "n_embd": 64,
+            "n_head": 2,
+            "gamma": 0.995
+          },
+          "run_dir": "runs/bohb/official_mat_stage3/trial_3"
+        },
+        {
+          "number": 4,
+          "state": "PRUNED",
+          "value": -1.5516108551128127,
+          "params": {
+            "lr": 0.00021304454359439122,
+            "ppo_epoch": 7,
+            "clip_param": 0.1,
+            "entropy_coef": 0.0086954110213886,
+            "n_block": 2,
+            "n_embd": 128,
+            "n_head": 2,
+            "gamma": 0.99
+          },
+          "run_dir": null
+        },
+        {
+          "number": 5,
+          "state": "PRUNED",
+          "value": -1.6726965939014917,
+          "params": {
+            "lr": 0.00041312600075817454,
+            "ppo_epoch": 13,
+            "clip_param": 0.2,
+            "entropy_coef": 0.020707057549315313,
+            "n_block": 1,
+            "n_embd": 128,
+            "n_head": 4,
+            "gamma": 0.99
+          },
+          "run_dir": null
+        },
+        {
+          "number": 6,
+          "state": "PRUNED",
+          "value": -1.7993269069071782,
+          "params": {
+            "lr": 0.00012620276290424608,
+            "ppo_epoch": 12,
+            "clip_param": 0.25,
+            "entropy_coef": 0.007616907478441682,
+            "n_block": 1,
+            "n_embd": 128,
+            "n_head": 4,
+            "gamma": 0.995
+          },
+          "run_dir": null
+        },
+        {
+          "number": 7,
+          "state": "PRUNED",
+          "value": -1.717062074225396,
+          "params": {
+            "lr": 0.00016243378873014182,
+            "ppo_epoch": 9,
+            "clip_param": 0.1,
+            "entropy_coef": 0.004383329786942252,
+            "n_block": 2,
+            "n_embd": 64,
+            "n_head": 2,
+            "gamma": 0.99
+          },
+          "run_dir": null
+        },
+        {
+          "number": 8,
+          "state": "PRUNED",
+          "value": -1.5121419471785582,
+          "params": {
+            "lr": 0.0004812448473197571,
+            "ppo_epoch": 14,
+            "clip_param": 0.1,
+            "entropy_coef": 0.006358398347237385,
+            "n_block": 2,
+            "n_embd": 128,
+            "n_head": 2,
+            "gamma": 0.995
+          },
+          "run_dir": null
+        },
+        {
+          "number": 9,
+          "state": "PRUNED",
+          "value": -1.6326232026221987,
+          "params": {
+            "lr": 0.00018755911047823923,
+            "ppo_epoch": 10,
+            "clip_param": 0.25,
+            "entropy_coef": 0.027099161086213245,
+            "n_block": 2,
+            "n_embd": 64,
+            "n_head": 4,
+            "gamma": 0.985
+          },
+          "run_dir": null
+        },
+        {
+          "number": 10,
+          "state": "PRUNED",
+          "value": -1.6628594449672771,
+          "params": {
+            "lr": 0.0002922057780765761,
+            "ppo_epoch": 12,
+            "clip_param": 0.2,
+            "entropy_coef": 0.0024203027697665474,
+            "n_block": 2,
+            "n_embd": 64,
+            "n_head": 2,
+            "gamma": 0.995
+          },
+          "run_dir": null
+        },
+        {
+          "number": 11,
+          "state": "PRUNED",
+          "value": -1.6153231699539294,
+          "params": {
+            "lr": 0.00019629412695036595,
+            "ppo_epoch": 12,
+            "clip_param": 0.1,
+            "entropy_coef": 0.002671594283178659,
+            "n_block": 2,
+            "n_embd": 128,
+            "n_head": 4,
+            "gamma": 0.99
+          },
+          "run_dir": null
+        },
+        {
+          "number": 12,
+          "state": "PRUNED",
+          "value": -1.7021899264582316,
+          "params": {
+            "lr": 0.00018517362659256766,
+            "ppo_epoch": 15,
+            "clip_param": 0.1,
+            "entropy_coef": 0.0043542523636031305,
+            "n_block": 2,
+            "n_embd": 128,
+            "n_head": 4,
+            "gamma": 0.985
+          },
+          "run_dir": null
+        },
+        {
+          "number": 13,
+          "state": "PRUNED",
+          "value": -1.6491963056917787,
+          "params": {
+            "lr": 0.0002758434733633288,
+            "ppo_epoch": 12,
+            "clip_param": 0.2,
+            "entropy_coef": 0.012416185444914537,
+            "n_block": 2,
+            "n_embd": 64,
+            "n_head": 2,
+            "gamma": 0.995
+          },
+          "run_dir": null
+        },
+        {
+          "number": 14,
+          "state": "COMPLETE",
+          "value": -1.3083776873415143,
+          "params": {
+            "lr": 0.00035260712469167605,
+            "ppo_epoch": 9,
+            "clip_param": 0.2,
+            "entropy_coef": 0.003947803113049415,
+            "n_block": 2,
+            "n_embd": 64,
+            "n_head": 2,
+            "gamma": 0.995
+          },
+          "run_dir": "runs/bohb/official_mat_stage3/trial_14"
+        },
+        {
+          "number": 15,
+          "state": "PRUNED",
+          "value": -1.6213109301133954,
+          "params": {
+            "lr": 0.00042217339739627054,
+            "ppo_epoch": 6,
+            "clip_param": 0.2,
+            "entropy_coef": 0.023763558654184374,
+            "n_block": 2,
+            "n_embd": 64,
+            "n_head": 2,
+            "gamma": 0.995
+          },
+          "run_dir": null
+        }
+      ]
+    },
+    "harl_mappo_stage3": {
+      "best_value": -2.7991679285684996,
+      "best_params": {
+        "lr": 0.00010204408321901393,
+        "critic_lr": 0.0007173649379421565,
+        "ppo_epoch": 8,
+        "clip_param": 0.15,
+        "entropy_coef": 0.0037601760455079933,
+        "gamma": 0.985,
+        "gae_lambda": 0.95,
+        "use_recurrent_policy": false,
+        "hidden_size": 128
+      },
+      "best_trial": 10,
+      "best_run_dir": "runs/bohb/harl_mappo_stage3/trial_10",
+      "n_complete": 5,
+      "n_pruned": 11,
+      "param_importances": {
+        "lr": 0.6370890123535201,
+        "critic_lr": 0.23224853127654518,
+        "entropy_coef": 0.0831991704945297,
+        "ppo_epoch": 0.03790241245377508,
+        "hidden_size": 0.006129957153500689,
+        "clip_param": 0.0017014962611233613,
+        "gae_lambda": 0.0015852819805931195,
+        "use_recurrent_policy": 0.00013609907113620843,
+        "gamma": 8.038955276844593e-06
+      },
+      "trials": [
+        {
+          "number": 0,
+          "state": "COMPLETE",
+          "value": -3.42862272508969,
+          "params": {
+            "lr": 0.0002178930765977573,
+            "critic_lr": 0.000923742187800982,
+            "ppo_epoch": 9,
+            "clip_param": 0.15,
+            "entropy_coef": 0.003429295162893964,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": false,
+            "hidden_size": 256
+          },
+          "run_dir": "runs/bohb/harl_mappo_stage3/trial_0"
+        },
+        {
+          "number": 1,
+          "state": "COMPLETE",
+          "value": -4.004746364683995,
+          "params": {
+            "lr": 0.0002977846306223351,
+            "critic_lr": 0.00040081743753083105,
+            "ppo_epoch": 6,
+            "clip_param": 0.15,
+            "entropy_coef": 0.006974018546851302,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": false,
+            "hidden_size": 256
+          },
+          "run_dir": "runs/bohb/harl_mappo_stage3/trial_1"
+        },
+        {
+          "number": 2,
+          "state": "COMPLETE",
+          "value": -3.637156562334179,
+          "params": {
+            "lr": 0.0007448222129315542,
+            "critic_lr": 0.0007346415600924095,
+            "ppo_epoch": 6,
+            "clip_param": 0.2,
+            "entropy_coef": 0.003973374402029805,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": true,
+            "hidden_size": 256
+          },
+          "run_dir": "runs/bohb/harl_mappo_stage3/trial_2"
+        },
+        {
+          "number": 3,
+          "state": "PRUNED",
+          "value": -3.9131000974758727,
+          "params": {
+            "lr": 0.0005012041881363469,
+            "critic_lr": 0.0009072178255843253,
+            "ppo_epoch": 10,
+            "clip_param": 0.2,
+            "entropy_coef": 0.004710902513642011,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": true,
+            "hidden_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 4,
+          "state": "PRUNED",
+          "value": -4.831400987180317,
+          "params": {
+            "lr": 0.0001167685641263401,
+            "critic_lr": 0.0009791164835210918,
+            "ppo_epoch": 9,
+            "clip_param": 0.25,
+            "entropy_coef": 0.015274907837455652,
+            "gamma": 0.99,
+            "gae_lambda": 0.98,
+            "use_recurrent_policy": false,
+            "hidden_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 5,
+          "state": "PRUNED",
+          "value": -4.268378324285754,
+          "params": {
+            "lr": 0.00019663906569758875,
+            "critic_lr": 0.0006471468317056864,
+            "ppo_epoch": 8,
+            "clip_param": 0.15,
+            "entropy_coef": 0.015501225780069818,
+            "gamma": 0.995,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": true,
+            "hidden_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 6,
+          "state": "PRUNED",
+          "value": -4.030664580076704,
+          "params": {
+            "lr": 0.0001922612399418128,
+            "critic_lr": 0.00045342520066683116,
+            "ppo_epoch": 10,
+            "clip_param": 0.25,
+            "entropy_coef": 0.005080651664789375,
+            "gamma": 0.99,
+            "gae_lambda": 0.92,
+            "use_recurrent_policy": false,
+            "hidden_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 7,
+          "state": "PRUNED",
+          "value": -4.476274723044214,
+          "params": {
+            "lr": 0.0003069549054491156,
+            "critic_lr": 0.0007335106847579302,
+            "ppo_epoch": 10,
+            "clip_param": 0.15,
+            "entropy_coef": 0.008021009733295227,
+            "gamma": 0.99,
+            "gae_lambda": 0.92,
+            "use_recurrent_policy": true,
+            "hidden_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 8,
+          "state": "PRUNED",
+          "value": -4.3002293668631415,
+          "params": {
+            "lr": 0.0002941132673605909,
+            "critic_lr": 0.000620039218791506,
+            "ppo_epoch": 6,
+            "clip_param": 0.15,
+            "entropy_coef": 0.009426918677726897,
+            "gamma": 0.985,
+            "gae_lambda": 0.92,
+            "use_recurrent_policy": true,
+            "hidden_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 9,
+          "state": "PRUNED",
+          "value": -4.30211772164213,
+          "params": {
+            "lr": 0.0002767068350188639,
+            "critic_lr": 0.0009771699382900162,
+            "ppo_epoch": 5,
+            "clip_param": 0.2,
+            "entropy_coef": 0.016044921747033283,
+            "gamma": 0.995,
+            "gae_lambda": 0.98,
+            "use_recurrent_policy": false,
+            "hidden_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 10,
+          "state": "COMPLETE",
+          "value": -2.7991679285684996,
+          "params": {
+            "lr": 0.00010204408321901393,
+            "critic_lr": 0.0007173649379421565,
+            "ppo_epoch": 8,
+            "clip_param": 0.15,
+            "entropy_coef": 0.0037601760455079933,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": false,
+            "hidden_size": 128
+          },
+          "run_dir": "runs/bohb/harl_mappo_stage3/trial_10"
+        },
+        {
+          "number": 11,
+          "state": "PRUNED",
+          "value": -4.61790856023703,
+          "params": {
+            "lr": 0.0001280540704711996,
+            "critic_lr": 0.0006816810172036032,
+            "ppo_epoch": 10,
+            "clip_param": 0.15,
+            "entropy_coef": 0.003393647257739124,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": false,
+            "hidden_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 12,
+          "state": "PRUNED",
+          "value": -4.286769085945885,
+          "params": {
+            "lr": 0.00011802690187873852,
+            "critic_lr": 0.0004139897641166741,
+            "ppo_epoch": 7,
+            "clip_param": 0.15,
+            "entropy_coef": 0.005740566056710784,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": false,
+            "hidden_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 13,
+          "state": "PRUNED",
+          "value": -4.955891580364079,
+          "params": {
+            "lr": 0.0005764297771208815,
+            "critic_lr": 0.0008255207768557212,
+            "ppo_epoch": 8,
+            "clip_param": 0.15,
+            "entropy_coef": 0.003851690771187804,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": false,
+            "hidden_size": 256
+          },
+          "run_dir": null
+        },
+        {
+          "number": 14,
+          "state": "PRUNED",
+          "value": -4.3807987593464475,
+          "params": {
+            "lr": 0.00017392926525118521,
+            "critic_lr": 0.0009741274061650563,
+            "ppo_epoch": 9,
+            "clip_param": 0.15,
+            "entropy_coef": 0.007954983598030155,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": false,
+            "hidden_size": 128
+          },
+          "run_dir": null
+        },
+        {
+          "number": 15,
+          "state": "COMPLETE",
+          "value": -3.209202182073325,
+          "params": {
+            "lr": 0.00024929944654406006,
+            "critic_lr": 0.0007006483296046406,
+            "ppo_epoch": 7,
+            "clip_param": 0.15,
+            "entropy_coef": 0.0036796535910243533,
+            "gamma": 0.985,
+            "gae_lambda": 0.95,
+            "use_recurrent_policy": false,
+            "hidden_size": 128
+          },
+          "run_dir": "runs/bohb/harl_mappo_stage3/trial_15"
+        }
+      ]
+    }
+  },
+  "exported_configs": [
+    "configs/official/stage1_ppo.yaml",
+    "configs/official/stage2_ppo.yaml",
+    "configs/official/stage2_ppo_transfer.yaml",
+    "configs/official/stage3_harl_haa2c.yaml",
+    "configs/official/stage3_harl_happo.yaml",
+    "configs/official/stage3_harl_hatrpo.yaml",
+    "configs/official/stage3_harl_mappo.yaml",
+    "configs/official/stage3_official_mat.yaml",
+    "configs/official/stage4_harl_haa2c.yaml",
+    "configs/official/stage4_harl_happo.yaml",
+    "configs/official/stage4_harl_hatrpo.yaml",
+    "configs/official/stage4_harl_mappo.yaml",
+    "configs/official/stage4_official_mat.yaml"
+  ],
+  "generated_at": "2026-11-22T20:02:59+01:00",
+  "db": "runs/optuna_bohb_mat.db",
+  "seed": 42,
+  "trials_per_study": 16,
+  "resources": {
+    "min_resource": 50000,
+    "max_resource": 350000,
+    "eval_freq": 50000
+  },
+  "sampler": "TPESampler(multivariate=True, seed=42)",
+  "pruner": "HyperbandPruner(min_resource=50000, max_resource=350000, reduction_factor=3)"
+}

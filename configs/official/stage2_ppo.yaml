@@ -1,0 +1,23 @@
+stage: 2
+algo: ppo
+exp_name: stage2_ppo
+total_steps: 150000
+num_envs: 8
+vec_env: subproc
+n_steps: 256
+batch_size: 128
+n_epochs: 4
+lr: 0.00010750512925563073
+gamma: 0.985
+gae_lambda: 0.92
+clip_range: 0.15
+ent_coef: 0.0030948595328786957
+vf_coef: 0.5
+max_grad_norm: 0.5
+cosine_lr: true
+eval_freq: 25000
+n_eval_episodes: 12
+net_arch:
+- 128
+- 128
+warm_start: false

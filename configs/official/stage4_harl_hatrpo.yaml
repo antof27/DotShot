@@ -1,0 +1,22 @@
+stage: 4
+algo: harl_hatrpo
+exp_name: stage4_harl_hatrpo
+total_steps: 300000
+episode_length: 200
+n_rollout_threads: 32
+partial_obs: true
+reward_alpha: 0.7
+share_param: false
+eval_freq: 100000
+n_eval_episodes: 10
+lr: 0.00010204408321901393
+critic_lr: 0.0007173649379421565
+ppo_epoch: 8
+clip_param: 0.15
+entropy_coef: 0.0037601760455079933
+gamma: 0.985
+gae_lambda: 0.95
+use_recurrent_policy: false
+hidden_sizes:
+- 128
+- 128

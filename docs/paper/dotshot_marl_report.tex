@@ -10,7 +10,7 @@
 \newtheorem{definition}{Definition}
 \newtheorem{lemma}{Lemma}
 
-\title{DotShot Game v2: Formal Dec-POMDP Specification, Cooperative MARL Taxonomy, and Milestone 1--2 Empirical Benchmarks}
+\title{DotShot Game v2: Formal Dec-POMDP Specification, Cooperative MARL Taxonomy, and Milestone 1--3 Empirical Benchmarks}
 \author{DotShot Research Engineering}
 \date{November 2026}
 
@@ -19,7 +19,7 @@
 \maketitle
 
 \begin{abstract}
-Standard multi-agent reinforcement learning (MARL) benchmarks either omit physical projectile geometry or expose flat discrete action spaces that obscure credit assignment under partial observability. We present \textbf{DotShot Game v2}, a four-stage 2D tactical arena simulator designed to test cooperative MARL algorithms across increasing coordination demands. Built with a pure-Python physics core and dual Gymnasium and PettingZoo \texttt{ParallelEnv} interfaces, DotShot v2 pairs a 129-dimensional local observation vector with a factored \texttt{MultiDiscrete([3, 3, 32, 4])} action space, line-of-sight cover occlusion, elemental counter mechanics, shielded bosses, and heterogeneous squad classes. Alongside a theoretical synthesis connecting single-agent policy optimization to Centralized Training with Decentralized Execution (CTDE), value factorization, trust-region mirror learning, and sequence modeling, we report both Milestone 1 smoke baselines and Milestone 2 multi-seed evaluations on an RTX 3060 workstation. In Milestone 1 ($40{,}000$--$80{,}000$ steps), short-horizon reinforcement learners fall behind a scripted heuristic due to a v2.0 binary aim cliff and miss penalties, though Stage 3 CTDE critics already retain over triple the Core health of \texttt{IPPO}. In Milestone 2, introducing smooth quadratic forward-hemisphere aim shaping (v2.1) and switching Windows MARL vectorization to \texttt{DummyMARLEnv} ($2{,}349$ env steps/sec, roughly $5\times$ faster than \texttt{SubprocMARLEnv}) unlocks Stage 1 \texttt{PPO} convergence over $200{,}000$ steps ($+3.31$ IQM return, $89.5\%$ elemental accuracy, $38.9\%$ win rate). Across 5-seed $60{,}000$-step MARL benchmarks, \texttt{Branching-QMIX} leads homogeneous Stage 3 in return ($-1.72$ IQM) and Core survival ($32.0\%$), while role-conditioned \texttt{ROMAT} leads heterogeneous Stage 4 ($-2.27$ IQM, tightest CI $[-2.47, -2.16]$, $10.8\%$ Core HP). Controlled Stage 3 ablations quantify the credit-assignment trade-off across team reward mixing $\alpha \in [0, 1]$ ($3.1\%$ Core HP at $\alpha = 0.25$ rising to $19.6\%$ at $\alpha = 1.00$) and show higher elemental accuracy under full vision ($39.7\%$ vs.\ $29.1\%$) versus slightly higher Core retention under line-of-sight occlusion ($12.3\%$ vs.\ $10.2\%$).
+Standard multi-agent reinforcement learning (MARL) benchmarks either omit physical projectile geometry or expose flat discrete action spaces that obscure credit assignment under partial observability. We present \textbf{DotShot Game v2}, a four-stage 2D tactical arena simulator designed to test cooperative MARL algorithms across increasing coordination demands. Built with a pure-Python physics core and dual Gymnasium and PettingZoo \texttt{ParallelEnv} interfaces, DotShot v2 pairs a 129-dimensional local observation vector with a factored \texttt{MultiDiscrete([3, 3, 32, 4])} action space, line-of-sight cover occlusion, elemental counter mechanics, shielded bosses, and heterogeneous squad classes. Alongside a theoretical synthesis connecting single-agent policy optimization to Centralized Training with Decentralized Execution (CTDE), value factorization, trust-region mirror learning, and sequence modeling, we report both Milestone 1 smoke baselines and Milestone 2 multi-seed evaluations on an RTX 3060 workstation. In Milestone 1 ($40{,}000$--$80{,}000$ steps), short-horizon reinforcement learners fall behind a scripted heuristic due to a v2.0 binary aim cliff and miss penalties, though Stage 3 CTDE critics already retain over triple the Core health of \texttt{IPPO}. In Milestone 2, introducing smooth quadratic forward-hemisphere aim shaping (v2.1) and switching Windows MARL vectorization to \texttt{DummyMARLEnv} ($2{,}349$ env steps/sec, roughly $5\times$ faster than \texttt{SubprocMARLEnv}) unlocks Stage 1 \texttt{PPO} convergence over $200{,}000$ steps ($+3.31$ IQM return, $89.5\%$ elemental accuracy, $38.9\%$ win rate). Across 5-seed $60{,}000$-step MARL benchmarks, \texttt{Branching-QMIX} leads homogeneous Stage 3 in return ($-1.72$ IQM) and Core survival ($32.0\%$), while role-conditioned \texttt{ROMAT} leads heterogeneous Stage 4 ($-2.27$ IQM, tightest CI $[-2.47, -2.16]$, $10.8\%$ Core HP). Controlled Stage 3 ablations quantify the credit-assignment trade-off across team reward mixing $\alpha \in [0, 1]$ ($3.1\%$ Core HP at $\alpha = 0.25$ rising to $19.6\%$ at $\alpha = 1.00$) and show higher elemental accuracy under full vision ($39.7\%$ vs.\ $29.1\%$) versus slightly higher Core retention under line-of-sight occlusion ($12.3\%$ vs.\ $10.2\%$). Milestone 3 replaces the in-house learners with the pinned \texttt{PKU-MARL/HARL} and \texttt{PKU-MARL/Multi-Agent-Transformer} codebases plus \texttt{Stable-Baselines3} \texttt{PPO}, tunes each with Optuna BOHB across $16$ trials, and reports converged $1{,}000{,}000$-step, 3-seed benchmarks: Stage 1 \texttt{PPO} reaches $14.95$ IQM at a $50.0\%$ win rate, a Stage 1 checkpoint lifts Stage 2 to $66.7\%$, and \texttt{OFFICIAL\_MAT} leads Stage 3 ($-1.62$) and Stage 4 ($-2.29$) ahead of heterogeneous HARL and shared \texttt{MAPPO}.
 \end{abstract}
 
 \section{Introduction}
@@ -34,7 +34,7 @@ This paper makes three contributions:
 \begin{enumerate}
     \item \textbf{Theoretical Synthesis:} We trace the mathematical progression from single-agent Markov Decision Processes (MDPs) and proximal policy updates to Dec-POMDPs and five modern CTDE algorithm families, identifying exact failure modes relevant to tactical arena combat.
     \item \textbf{Formal Simulator Specification:} We document the DotShot v2 state, observation, factored action, elemental shield, and $\alpha$-blended reward specifications, along with the rendering and explainability overlay used for behavioral inspection.
-    \item \textbf{Milestone 1--2 Empirical Benchmarks and Ablations:} Following statistical evaluation protocols from Agarwal et al.~\cite{agarwal2021rliable} and Gorsane et al.~\cite{gorsane2022marleval}, we report multi-seed Interquartile Mean (IQM) returns, bootstrap confidence intervals, Core survival ratios, elemental accuracy, and behavioral diagnostics across Milestone 1 smoke baselines and Milestone 2 v2.1 studies (200k-step Stage 1--2 single-agent runs, 5-seed Stage 3--4 MARL comparisons, and $\alpha$/LOS ablations).
+    \item \textbf{Milestone 1--3 Empirical Benchmarks and Ablations:} Following statistical evaluation protocols from Agarwal et al.~\cite{agarwal2021rliable} and Gorsane et al.~\cite{gorsane2022marleval}, we report multi-seed Interquartile Mean (IQM) returns, bootstrap confidence intervals, Core survival ratios, elemental accuracy, and behavioral diagnostics across Milestone 1 smoke baselines and Milestone 2 v2.1 studies (200k-step Stage 1--2 single-agent runs, 5-seed Stage 3--4 MARL comparisons, and $\alpha$/LOS ablations). Milestone 3 pins the upstream \texttt{HARL} and \texttt{MAT} codebases, tunes every learner with Optuna BOHB, and adds converged $1{,}000{,}000$-step, 3-seed benchmarks for Stages 1--4.
 \end{enumerate}
 
 \section{From Single-Agent RL to Cooperative Dec-POMDPs}
@@ -524,7 +524,7 @@ Two results stand out in Stage 4:
     \item \textbf{Why Unshared HAPPO Has Not Yet Overtaken MAPPO at 60k Steps:} Our Milestone 1 hypothesis predicted that unshared \texttt{HAPPO} would surpass shared \texttt{MAPPO} in Stage 4. At $60{,}000$ environment steps, \texttt{HAPPO} achieves higher elemental accuracy ($32.9\%$ vs.\ $31.3\%$) but still trails \texttt{MAPPO} in return ($-2.47$ vs.\ $-2.39$) and Core HP ($6.5\%$ vs.\ $9.4\%$). Splitting experience across three independent actor networks ($\theta^{\text{Vanguard}}, \theta^{\text{Striker}}, \theta^{\text{Support}}$) reduces per-network gradient updates by $3\times$ relative to shared \texttt{MAPPO}, delaying the crossover until longer horizons.
 \end{itemize}
 
-\subsection{Controlled Ablations: Credit Assignment ($\alpha$) and Line-of-Sight Occlusion}
+\subsection{Controlled Ablations: Credit Assignment (\texorpdfstring{$\alpha$}{alpha}) and Line-of-Sight Occlusion}
 
 To isolate how reward mixing and partial observability shape Stage 3 \texttt{MAPPO} behavior, we ran two controlled ablations over $50{,}000$ steps across $3$ seeds (\texttt{[0, 1, 2]}). Results appear in Table~\ref{tab:m2-ablations} and Figure~\ref{fig:m2-ablations}.
 
@@ -564,9 +564,182 @@ Both ablations expose concrete behavioral trade-offs:
     \item \textbf{Full Arena Vision vs.\ Line-of-Sight Occlusion:} Removing LOS occlusion (\texttt{LOS\_OFF}) raises elemental accuracy by $10.6$ percentage points ($39.7\%$ vs.\ $29.1\%$) and increases kills/episode ($0.2$ vs.\ $0.1$) because Strikers observe enemies behind cover blocks and align counter-elements ahead of peek angles. Yet \texttt{LOS\_OFF} finishes with slightly lower return ($-2.15$ vs.\ $-1.92$) and Core HP ($10.2\%$ vs.\ $12.3\%$) than \texttt{LOS\_ON}: full vision tempts early policies into firing prematurely at enemies shielded behind cover blocks, accumulating $-0.04$ pillar-impact misses, whereas \texttt{LOS\_ON} masks occluded targets until line-of-sight opens, promoting tighter, more cautious Core-adjacent positioning.
 \end{itemize}
 
+\section{Milestone 3: Official Upstream Integrations, BOHB Tuning, and Converged 1M-Step Benchmarks}
+
+Milestone 3 replaces the in-house learners of Milestone 2 with the reference implementations from three upstream projects, tunes every learner with Optuna, and extends the benchmark budget to $1{,}000{,}000$ environment steps across $3$ seeds (\texttt{[0, 1, 2]}). Matching both the codebases and the search protocol keeps algorithm comparisons free of implementation drift.
+
+\subsection{Official Upstream Codebases}
+
+The cooperative learners come from \texttt{PKU-MARL/HARL}~\cite{zhong2024harl}, pinned at a fixed commit. Its \texttt{MAPPO}, \texttt{HAPPO}, \texttt{HATRPO}, and \texttt{HAA2C} policies read DotShot's factored \texttt{MultiDiscrete([3, 3, 32, 4])} action space through their native multi-discrete head, so movement, aim, and weapon branches keep separate logits instead of collapsing into one flattened index.
+
+\texttt{PKU-MARL/Multi-Agent-Transformer}~\cite{wen2022mat} runs unmodified behind a continuous adapter. MAT expects a \texttt{Box} action space, so the adapter emits $8$ continuous values and maps them onto the factored tuple. Two values pass through thresholds to give horizontal and vertical movement, and a further pair forms $(\cos\theta, \sin\theta)$, from which \texttt{atan2} recovers the aim bin. Building the aim as a unit vector avoids the discontinuity that a direct regression on $32$ bins would produce at $\theta = 0$, where bins $0$ and $31$ are neighbours on the circle but far apart in index space. The last four values choose the weapon by \texttt{argmax}.
+
+Single-agent runs use \texttt{Stable-Baselines3} \texttt{PPO}~\cite{schulman2017ppo} behind a Gymnasium adapter. The adapter flattens the $129$-dimensional observation and applies the same action mask as the MARL environments, so a Stage 1 checkpoint can initialize a Stage 2 run without reshaping any weights.
+
+\subsection{Optuna BOHB Hyperparameter Optimization}
+
+Optuna~\cite{akiba2019optuna} runs each study under a BOHB-style schedule~\cite{falkner2018bohb}. \texttt{TPESampler(multivariate=True)} proposes configurations, and \texttt{HyperbandPruner(reduction\_factor=3)} allocates resources from $50{,}000$ to $350{,}000$ steps, scoring every $50{,}000$ steps and dropping weak trials at each rung. All four studies use seed $42$ and $16$ trials, and results are written to SQLite databases under \texttt{runs/} and exported to \texttt{docs/results/m3\_bohb\_summary.json}. Table~\ref{tab:m3-bohb} reports the best trial with the two dominant fANOVA importances, and Figure~\ref{fig:m3-bohb} shows the best-so-far curves beside the full importance profile.
+
+\begin{table}[t]
+\centering
+\caption{Optuna BOHB studies for the Milestone 3 learners (16 trials each, seed 42, \texttt{HyperbandPruner} from 50,000 to 350,000 steps). The best objective is the study's evaluation return under its own aggregation rule; fANOVA shares come from the fitted surrogate.}
+\label{tab:m3-bohb}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llccl@{}}
+\toprule
+Study & Best Trial & Best Objective & Complete / Pruned & Dominant Parameters (fANOVA Share) \\
+\midrule
+\texttt{sb3\_ppo\_stage1} & 14 & $14.57$ & $6 / 10$ & \texttt{ent\_coef} $53.0\%$, \texttt{lr} $43.3\%$ \\
+\texttt{sb3\_ppo\_stage2} & 4 & $9.54$ & $5 / 11$ & \texttt{ent\_coef} $89.7\%$, \texttt{lr} $8.3\%$ \\
+\texttt{official\_mat\_stage3} & 3 & $-0.78$ & $4 / 12$ & \texttt{entropy\_coef} $55.5\%$, \texttt{lr} $36.8\%$ \\
+\texttt{harl\_mappo\_stage3} & 10 & $-2.80$ & $5 / 11$ & \texttt{lr} $63.7\%$, \texttt{critic\_lr} $23.2\%$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/m3_bohb_tuning.png}
+\caption{Optuna BOHB tuning across the four Milestone 3 studies (16 trials each, seed 42). \textbf{Left:} best-so-far objective per trial, with completed trials marked as circles and pruned trials as crosses; \texttt{sb3\_ppo\_stage1} and \texttt{sb3\_ppo\_stage2} climb above $9$ while the two Stage 3 studies stay negative. \textbf{Right:} normalized fANOVA importances, where the entropy coefficients and learning rates occupy the top rows and every architectural parameter falls below $0.01$.}
+\label{fig:m3-bohb}
+\end{figure}
+
+Two axes carry the search. The entropy coefficient explains $53.0\%$ of objective variance in the Stage 1 study and $89.7\%$ in the Stage 2 study, and its MAT counterpart explains $55.5\%$ in the Stage 3 transformer search. Learning rates take most of the remainder, at $43.3\%$, $8.3\%$, and $36.8\%$ for those three, and at $63.7\%$ for the actor plus $23.2\%$ for the critic in the HARL MAPPO search. Combining the two axes gives $96.3\%$, $98.0\%$, $92.3\%$, and $86.9\%$ of the variance, so the other seven or eight hyperparameters together explain at most $13.1\%$. In the HARL MAPPO search the critic rate alone accounts for nearly a quarter of the total, which points to value-function stability as a binding constraint alongside the actor step size.
+
+The entropy result follows from the action space. A factored policy over $32$ aim bins and $4$ weapon choices carries $42$ logits per agent, and without a tuned entropy bonus it settles on a few bins and stops exploring the rest. The three smallest entropy coefficients in \texttt{sb3\_ppo\_stage1} ($0.0020$, $0.0033$, $0.0034$) all ended in pruning, while the winning configurations sit between $0.0031$ and $0.0276$.
+
+Pruning did most of the work: $10$ of $16$ trials were dropped in the Stage 1 study, $11$ in the Stage 2 and HARL MAPPO studies, and $12$ in the MAT study, leaving four to six full-budget runs per study. The winning configurations were exported to \texttt{configs/official/} and retrained from scratch at the $1{,}000{,}000$-step benchmark budget.
+
+One bookkeeping detail affects the \texttt{harl\_mappo\_stage3} objective. That study scored trials on the raw sum of both agents' returns, so its best value of $-2.799$ equals a per-agent mean of $-1.40$. HARL evaluation was later unified to report per-agent means, which is the convention in Tables~\ref{tab:m3-stage3} and~\ref{tab:m3-stage4}. The $-1.40$ search value and the $-2.12$ final return for \texttt{HARL\_MAPPO} differ in both aggregation rule and step budget, so the BOHB value ranks trials only within its own study.
+
+\subsection{Converged Stage 1 and Stage 2 Benchmarks}
+
+Table~\ref{tab:m3-stage12} reports the single-agent results at $1{,}000{,}000$ steps, and Figures~\ref{fig:m3-stage1} and~\ref{fig:m3-stage2} plot the learning curves.
+
+\begin{table}[t]
+\centering
+\caption{Milestone 3 single-agent benchmarks on Stage 1 and Stage 2 (1,000,000 env steps, 3 seeds \texttt{[0, 1, 2]}). Values report IQM with 95\% bootstrap CIs and evaluation means.}
+\label{tab:m3-stage12}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+Stage & Agent & Final Return IQM [95\% CI] & Best Return IQM [95\% CI] & Win Rate & Elem. Acc. & Kills/Ep \\
+\midrule
+Stage 1 & HEURISTIC & $37.68\;[35.34, 39.21]$ & $37.68\;[35.34, 39.21]$ & $97.9\%$ & $100.0\%$ & $21.1$ \\
+Stage 1 & PPO & $14.95\;[7.94, 18.93]$ & $17.66\;[14.86, 19.20]$ & $50.0\%$ & $100.0\%$ & $8.7$ \\
+Stage 1 & RANDOM & $-2.20\;[-2.22, -2.18]$ & $-2.20\;[-2.22, -2.18]$ & $0.0\%$ & $42.1\%$ & $0.0$ \\
+\midrule
+Stage 2 & HEURISTIC & $18.84\;[18.07, 20.32]$ & $18.84\;[18.07, 20.32]$ & $0.0\%$ & $99.7\%$ & $10.9$ \\
+Stage 2 & PPO & $2.81\;[0.85, 5.64]$ & $4.00\;[2.65, 6.30]$ & $13.9\%$ & $39.8\%$ & $1.6$ \\
+Stage 2 & PPO\_TRANSFER & $8.91\;[7.89, 9.44]$ & $10.12\;[8.44, 12.01]$ & $66.7\%$ & $36.1\%$ & $3.5$ \\
+Stage 2 & RANDOM & $-1.99\;[-2.03, -1.95]$ & $-1.99\;[-2.03, -1.95]$ & $0.0\%$ & $27.6\%$ & $0.0$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/m3_stage1_official_converged.png}
+\caption{Milestone 3 Stage 1 convergence over $1{,}000{,}000$ steps across 3 seeds. \texttt{PPO} lifts episodic return from $-2$ to roughly $15$, raises win rate to a noisy plateau near $0.5$, and drives elemental accuracy from $0.0$ to $1.0$ within $200{,}000$ steps, while \texttt{HEURISTIC} holds a flat $37.68$ return and \texttt{RANDOM} stays at $-2.20$.}
+\label{fig:m3-stage1}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/m3_stage2_official_converged.png}
+\caption{Milestone 3 Stage 2 convergence over $1{,}000{,}000$ steps across 3 seeds. \texttt{PPO\_TRANSFER} separates from scratch \texttt{PPO} after $400{,}000$ steps and finishes near a $0.67$ win rate, while \texttt{HEURISTIC} records $99.7\%$ elemental accuracy yet never wins an episode because it does not dodge incoming fire.}
+\label{fig:m3-stage2}
+\end{figure}
+
+Stage 1 clears the exploration bottleneck. \texttt{PPO} reaches $14.95$ IQM return ($95\%$ CI $[7.94, 18.93]$), wins $50.0\%$ of evaluation episodes, records $100.0\%$ elemental accuracy, and averages $8.7$ kills per episode. Its best checkpoint returns $17.66$ $[14.86, 19.20]$ with an $86.1\%$ win rate, so the late-training average sits below the policy's peak. The scripted \texttt{HEURISTIC} still leads on raw return ($37.68$) because it never wastes a shot, and \texttt{RANDOM} stays at $-2.20$.
+
+Stage 2 separates transfer from scratch training. \texttt{PPO\_TRANSFER}, initialized from the converged Stage 1 checkpoint, returns $8.91$ $[7.89, 9.44]$ and wins $66.7\%$ of episodes. The same algorithm trained from random weights returns $2.81$ $[0.85, 5.64]$ and wins $13.9\%$. Transfer also lifts the kill rate from $1.6$ to $3.5$ per episode, and its narrower confidence interval ($[7.89, 9.44]$, width $1.55$, against $[0.85, 5.64]$, width $4.79$) shows the gain is consistent across seeds. Elemental accuracy moves the other way, from $39.8\%$ for scratch \texttt{PPO} to $36.1\%$ for the transfer run, so the transferred policy wins through positioning and survival rather than cleaner element selection. \texttt{HEURISTIC} records $99.7\%$ elemental accuracy and still wins nothing, because it holds position while enemy projectiles arrive.
+
+\subsection{Converged Stage 3 Homogeneous Benchmark}
+
+Table~\ref{tab:m3-stage3} and Figure~\ref{fig:m3-stage3} report the homogeneous two-Striker benchmark at $1{,}000{,}000$ steps.
+
+\begin{table}[t]
+\centering
+\caption{Milestone 3 Stage 3 homogeneous co-op benchmark (official upstream learners, 1,000,000 env steps, 3 seeds \texttt{[0, 1, 2]}, RTX 3060 CUDA).}
+\label{tab:m3-stage3}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Algorithm & Final Return IQM [95\% CI] & Best Return IQM [95\% CI] & Win Rate & Core HP & Elem. Acc. & Kills/Ep \\
+\midrule
+OFFICIAL\_MAT & $-1.62\;[-1.67, -1.56]$ & $-1.29\;[-1.43, -1.20]$ & $0.0\%$ & $1.4\%$ & $34.9\%$ & $0.9$ \\
+HARL\_HAA2C & $-2.06\;[-2.12, -1.96]$ & $-1.50\;[-1.81, -1.09]$ & $0.0\%$ & $7.9\%$ & $45.1\%$ & $0.2$ \\
+HARL\_MAPPO & $-2.12\;[-2.43, -1.83]$ & $-1.66\;[-1.76, -1.47]$ & $0.0\%$ & $11.8\%$ & $37.5\%$ & $0.2$ \\
+HARL\_HATRPO & $-2.15\;[-2.22, -2.11]$ & $-1.90\;[-1.98, -1.81]$ & $0.0\%$ & $1.5\%$ & $42.2\%$ & $0.3$ \\
+HARL\_HAPPO & $-2.17\;[-2.38, -1.90]$ & $-1.82\;[-2.00, -1.62]$ & $0.0\%$ & $9.9\%$ & $41.9\%$ & $0.2$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/m3_stage3_official_converged.png}
+\caption{Milestone 3 Stage 3 homogeneous co-op across 3 seeds ($1{,}000{,}000$ steps). \texttt{OFFICIAL\_MAT} holds the highest episodic return for the whole run and peaks near $-1.4$, while Core survival rises for every learner early and then falls below $0.12$ by the final checkpoint. Elemental accuracy remains below $0.5$ throughout.}
+\label{fig:m3-stage3}
+\end{figure}
+
+\texttt{OFFICIAL\_MAT} leads both return columns: $-1.62$ final IQM ($95\%$ CI $[-1.67, -1.56]$), $-1.29$ best $[-1.43, -1.20]$, and $0.9$ kills per episode, roughly four times the $0.2$ recorded by most HARL variants. \texttt{HARL\_HAA2C} follows at $-2.06$ with the highest elemental accuracy in the table ($45.1\%$). \texttt{HARL\_MAPPO} returns $-2.12$ and retains the most Core health at the final checkpoint ($11.8\%$), with \texttt{HARL\_HATRPO} ($-2.15$) and \texttt{HARL\_HAPPO} ($-2.17$) behind it.
+
+The return ranking and the Core ranking disagree, and the reason is the checkpoint each metric is read from. \texttt{OFFICIAL\_MAT} peaks at $45.2\%$ Core HP during training and finishes at $1.4\%$; \texttt{HARL\_MAPPO} peaks at $39.6\%$ and finishes at $11.8\%$. Both policies lose Core protection late, and MAT keeps the higher return because its decoder still converts waves into kills after the Core is exposed, which the $0.9$ kills per episode against $0.2$ shows directly.
+
+All five algorithms record $0.0\%$ win rate at $1{,}000{,}000$ steps. A Stage 3 episode counts as a win only after the boss wave is cleared, and no learner reaches that point inside the budget. MAT's lead comes from conditioning each agent's action on the action its partner has already sampled, which removes the simultaneous-move ambiguity that two shared-policy Strikers face when both must choose a different flank.
+
+\subsection{Converged Stage 4 Heterogeneous Benchmark}
+
+Table~\ref{tab:m3-stage4} and Figure~\ref{fig:m3-stage4} report the heterogeneous squad benchmark at $1{,}000{,}000$ steps.
+
+\begin{table}[t]
+\centering
+\caption{Milestone 3 Stage 4 heterogeneous squad benchmark (official upstream learners, 1,000,000 env steps, 3 seeds \texttt{[0, 1, 2]}, RTX 3060 CUDA).}
+\label{tab:m3-stage4}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Algorithm & Final Return IQM [95\% CI] & Best Return IQM [95\% CI] & Win Rate & Core HP & Elem. Acc. & Kills/Ep \\
+\midrule
+OFFICIAL\_MAT & $-2.29\;[-2.34, -2.19]$ & $-1.61\;[-1.73, -1.44]$ & $0.0\%$ & $4.7\%$ & $33.1\%$ & $0.9$ \\
+HARL\_HAA2C & $-2.50\;[-2.54, -2.45]$ & $-1.99\;[-2.13, -1.74]$ & $0.0\%$ & $3.4\%$ & $34.4\%$ & $0.1$ \\
+HARL\_HATRPO & $-2.53\;[-2.68, -2.44]$ & $-2.15\;[-2.48, -1.98]$ & $0.0\%$ & $1.8\%$ & $33.5\%$ & $0.7$ \\
+HARL\_HAPPO & $-2.54\;[-2.94, -2.22]$ & $-2.32\;[-2.46, -2.22]$ & $0.0\%$ & $2.1\%$ & $31.9\%$ & $0.4$ \\
+HARL\_MAPPO & $-2.80\;[-2.86, -2.74]$ & $-2.38\;[-2.57, -2.22]$ & $0.0\%$ & $1.7\%$ & $31.8\%$ & $0.2$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/m3_stage4_official_converged.png}
+\caption{Milestone 3 Stage 4 heterogeneous squad across 3 seeds ($1{,}000{,}000$ steps). \texttt{OFFICIAL\_MAT} sits above every other return curve for the full run, peaks before $0.7$M steps and declines afterwards, and shared \texttt{HARL\_MAPPO} stays lowest from $0.4$M steps onward. Core survival falls for all five learners, and elemental accuracy remains below $0.5$.}
+\label{fig:m3-stage4}
+\end{figure}
+
+\texttt{OFFICIAL\_MAT} leads on return, Core health, and kills per episode: $-2.29$ final IQM (95\% CI $[-2.34, -2.19]$), $-1.61$ best (95\% CI $[-1.73, -1.44]$), $4.7\%$ Core HP, and $0.9$ kills per episode. The heterogeneous HARL variants take the next three places, with \texttt{HARL\_HAA2C} at $-2.50$, \texttt{HARL\_HATRPO} at $-2.53$ and $0.7$ kills per episode, and \texttt{HARL\_HAPPO} at $-2.54$. Shared-policy \texttt{HARL\_MAPPO} finishes last at $-2.80$, with a $95\%$ interval of $[-2.86, -2.74]$ (width $0.12$) that is narrow beside \texttt{HARL\_HAPPO}'s $[-2.94, -2.22]$ (width $0.72$).
+
+This ordering settles the question Milestone 1 raised. On asymmetric roles, a single actor network trained across \texttt{Vanguard}, \texttt{Striker}, and \texttt{Support} pulls the three policies toward a compromise that suits none of them, and the narrow confidence interval shows the deficit is systematic rather than seed noise. Unshared actors avoid that interference, landing between $-2.50$ and $-2.54$ in a band $0.04$ wide.
+
+Stage 4 also lowers every return relative to Stage 3. The wave schedule is heavier, with up to $10$ enemies against $8$, and the squad mixes three movement speeds and hitbox sizes, so the same $1{,}000{,}000$-step budget covers less of the task. MAT's own curve shows the cost: its return peaks early and then falls, matching the drop from its best-checkpoint return ($-1.61$) to its final return ($-2.29$).
+
 \section{Limitations and Future Work}
 
-Milestone 1 and Milestone 2 establish a reproducible Dec-POMDP benchmark and validate v2.1 reward shaping, yet three open gaps remain. First, while Stage 1 \texttt{PPO} converges to a $38.9\%$ win rate and $89.5\%$ elemental accuracy in $200{,}000$ steps, Stage 2 ($200{,}000$ steps) and multi-agent Stages 3--4 ($60{,}000$ steps) still yield $0.0\%$ win rates under workstation compute budgets; extending training to $500{,}000+$ steps and initializing Stage 3--4 Strikers from converged Stage 1--2 checkpoints (curriculum weight transfer) is needed to reach boss clears and multi-agent combo kills. Second, \texttt{HAPPO}'s $3$-way per-agent sample split in Stage 4 remains data-limited at $60{,}000$ steps; longer Stage 4 runs are required to test whether unshared \texttt{HAPPO} overtakes parameter-shared \texttt{MAPPO} asymptotically. Third, because \texttt{ROMAT} and \texttt{MAT} rely on centralized sequential decoding across agents, distilling trained Transformer policies into purely decentralized local actors remains an open step for communication-free deployment.
+Milestone 3 settles the questions Milestone 2 left open and leaves a narrower set of constraints. Stages 1 and 2 now train to non-zero win rates within the workstation budget: \texttt{PPO} wins $50.0\%$ of Stage 1 episodes, and a Stage 1 checkpoint transferred into Stage 2 lifts the win rate to $66.7\%$ against $13.9\%$ from scratch. Single-agent curriculum transfer works, and the remaining Stage 1 gap is the $47.9$ percentage points between \texttt{PPO}'s $50.0\%$ and the $97.9\%$ scripted win rate.
+
+At $1{,}000{,}000$ steps, Stages 3 and 4 produce a stable structural ranking instead of solved tasks. \texttt{OFFICIAL\_MAT} leads both stages ($-1.62$ and $-2.29$), heterogeneous HARL occupies the middle of Stage 4 ($-2.50$ to $-2.54$), and shared \texttt{MAPPO} trails at $-2.80$. No algorithm clears a multi-wave shielded boss at this budget, and Core health ends below $12\%$ at every final checkpoint. Reaching boss clears will need $3{,}000{,}000$ to $10{,}000{,}000$ steps, or a multi-agent curriculum that initializes Stage 3 and Stage 4 Strikers from the converged Stage 1 aim trunk and Stage 2 elemental trunk rather than from random weights.
+
+Two gaps remain beyond the training budget. MAT relies on centralized sequential decoding, so distilling it into purely decentralized local actors is still open. The BOHB studies also optimised at $350{,}000$ steps, a quarter of the final benchmark budget, so the selected configurations may not be optimal at $1{,}000{,}000$ steps; re-running the search at the full budget is the obvious next step.
 
 \bibliographystyle{plainnat}
 \bibliography{../references}

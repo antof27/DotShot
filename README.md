@@ -12,6 +12,7 @@ RL-game1/
 │   ├── dotshot/        # Simulator physics (core/), Gymnasium & PettingZoo envs (envs/), Pygame renderer (render/)
 │   └── benchmarks/     # Single-agent SB3 runners, modular CTDE MARL algos, rliable evaluator & plotter
 ├── configs/            # Versioned YAML experiment definitions (Stage 1–4)
+├── third_party/        # Pinned PKU-MARL HARL and Multi-Agent-Transformer submodules
 ├── docs/               # Docsify SOTA handbook (01..04), BibTeX, LaTeX paper/, results/, assets/ (figures, screenshots, videos, legacy_v1_plots)
 ├── scripts/            # enjoy.py (manual play / MP4 capture), run_m2_suite.py, plot_m2_ablations.py, validate_docs.py
 ├── tests/              # pytest simulator & CUDA MARL verification suite
@@ -62,14 +63,23 @@ pip install -e ".[dev]"
 
 ## Manual Play & Checkpoint Replay
 
-Play any stage interactively with keyboard and mouse, or replay/record a trained checkpoint (`.zip` for Stable-Baselines3, `.pt` for MARL):
+Play any stage interactively with keyboard and mouse, or replay/record a trained checkpoint (`.zip` for Stable-Baselines3, `.pt` for MARL, or a checkpoint directory from the official HARL/MAT runners):
 
 ```powershell
 # Play Stage 3 cooperatively (controls Agent 0 with WASD + mouse; 1/2/3 elements; Space/Click fire; Tab overlay)
 .\.venv\Scripts\python.exe scripts\enjoy.py --stage 3 --manual
 
+# Replay the official Stage 3 MAT checkpoint
+.\.venv\Scripts\python.exe scripts\enjoy.py --stage 3 --official-mat runs\m3_official\stage3\official_mat\seed_0\checkpoints\best
+
+# Replay an official HARL checkpoint (MAPPO shown; swap the folder for HAPPO, HATRPO, or HAA2C)
+.\.venv\Scripts\python.exe scripts\enjoy.py --stage 3 --official-harl runs\m3_official\stage3\harl_mappo\seed_0\checkpoints\best
+
 # Evaluate a trained MARL checkpoint or export an MP4 clip headlessly
 .\.venv\Scripts\python.exe scripts\enjoy.py --stage 3 --model runs\stage3\mat\stage3_mat\seed_0\checkpoints\final.pt --record docs\assets\videos\dotshot_stage3_demo.mp4 --fps 30
+
+# Record the official Stage 4 MAT policy
+.\.venv\Scripts\python.exe scripts\enjoy.py --stage 4 --official-mat runs\m3_official\stage4\official_mat\seed_0\checkpoints\best --record docs\assets\videos\m3_official_stage4_best.mp4 --fps 30
 ```
 
 ---
@@ -107,13 +117,25 @@ Every experiment is driven by versioned YAML configs under `configs/`:
 
 ---
 
+## Milestone 3 Highlights (Official SOTA and Optuna BOHB)
+
+Milestone 3 runs pinned upstream implementations on the MARL stages and Stable-Baselines3 on Stages 1 and 2. `third_party/HARL` (Zhong et al., 2024) covers MAPPO, HAPPO, HATRPO, and HAA2C on the native `MultiDiscrete([3, 3, 32, 4])` space, while `third_party/Multi-Agent-Transformer` (Wen et al., 2022) runs MAT through the 8-D `Box` adapter in `src/benchmarks/official/mat_dotshot_env.py`.
+
+- Optuna BOHB ran 16 trials per study with `TPESampler(multivariate=True, seed=42)` and `HyperbandPruner(reduction_factor=3)`. Best objectives are `14.57` for Stage 1 PPO, `9.54` for Stage 2 transfer, `-0.777` for Stage 3 MAT, and `-2.799` for Stage 3 HARL MAPPO on the 2-agent team-sum objective (`-1.40` per agent).
+- Stage 1 PPO reaches `14.95` return IQM, `50.0%` win rate, `100.0%` elemental accuracy, and `8.7` kills per episode over 1,000,000 steps and 3 seeds.
+- Stage 2 `PPO_TRANSFER` reaches `8.91` return IQM and `66.7%` win rate, with a higher win rate than scratch `PPO` (`2.81`, `13.9%`) and the un-evasive `HEURISTIC` (`0.0%`).
+- `OFFICIAL_MAT` leads final return on Stage 3 (`-1.62 [-1.67, -1.56]`) and Stage 4 (`-2.29 [-2.34, -2.19]`). On the asymmetric Stage 4 squad, `HARL_HAA2C` (`-2.50`), `HARL_HATRPO` (`-2.53`), and `HARL_HAPPO` (`-2.54`) all beat `HARL_MAPPO` (`-2.80`).
+- Replays: [Stage 3](docs/assets/videos/m3_official_stage3_best.mp4) (`357` frames, Core HP `76.7%`) and [Stage 4](docs/assets/videos/m3_official_stage4_best.mp4) (`450` frames, Score `300`, Core HP `86.7%`). The compiled report is [dotshot_marl_report.pdf](docs/paper/dotshot_marl_report.pdf), and the full IQM tables are in [Chapter 4](docs/04-experiments-log.md).
+
+---
+
 ## Research Handbook, Scientific Report & Quality Gates
 
-- **Docsify Handbook**: Serve chapters 1–4 (RL-to-MARL foundations, CTDE taxonomy, simulator spec, and Milestone 1–2 empirical logs) locally:
+- **Docsify Handbook**: Serve chapters 1–4 (RL-to-MARL foundations, CTDE taxonomy, simulator spec, and Milestone 1–3 empirical logs) locally:
   ```powershell
   python -m http.server 8080 --directory docs
   ```
-- **LaTeX Scientific Report**: [docs/paper/dotshot_marl_report.tex](docs/paper/dotshot_marl_report.tex) (with verified BibTeX references in [docs/references.bib](docs/references.bib)).
+- **Scientific Report**: [LaTeX source](docs/paper/dotshot_marl_report.tex) and [compiled PDF](docs/paper/dotshot_marl_report.pdf) (with verified BibTeX references in [docs/references.bib](docs/references.bib)).
 - **Simulator & MARL Unit Tests**:
   ```powershell
   .\.venv\Scripts\python.exe -m pytest tests/ -v
