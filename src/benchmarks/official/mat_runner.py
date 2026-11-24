@@ -206,11 +206,12 @@ def run_mat_experiment(
             policy.transformer.load_state_dict(
                 torch.load(config["init_transformer_path"], map_location=torch_device)
             )
-        if config.get("warm_start") == "bc":
+        if config.get("warm_start") in ("bc", "distill"):
             from benchmarks.official.behaviour_cloning import bc_mat, load_dataset
 
-            data = load_dataset(stage, int(config.get("bc_episodes", 40)), env_kwargs)
-            logger.log_metrics(0, bc_mat(policy, data, epochs=int(config.get("bc_epochs", 3))))
+            teacher = config.get("teacher_path") if config["warm_start"] == "distill" else None
+            data = load_dataset(stage, int(config.get("bc_episodes", 200)), env_kwargs, teacher)
+            logger.log_metrics(0, bc_mat(policy, data, epochs=int(config.get("bc_epochs", 30))))
         trainer = MATTrainer(args, policy, n_agents, device=torch_device)
         # Integer actions need one column per branch; log-probs keep one joint column.
         act_box = spaces.Box(low=0, high=1, shape=(len(act_space.nvec),), dtype=np.float32)

@@ -250,8 +250,15 @@ class _DotShotHARLRunner(OnPolicyHARunner):
         )
         self.save_dir: Optional[str] = None
 
-    def train_step(self, algo: str) -> Dict[str, float]:
-        """One upstream update; returns the mean of HARL's train infos."""
+    def train_step(self, algo: str, critic_only: bool = False) -> Dict[str, float]:
+        """One upstream update; returns the mean of HARL's train infos.
+
+        ``critic_only`` trains just the critic (warm-up after behaviour cloning, so the
+        first policy updates use meaningful advantages instead of an untrained critic).
+        """
+        if critic_only:
+            info = self.critic.train(self.critic_buffer, self.value_normalizer)
+            return {f"train/{k}": _scalar(v) for k, v in info.items()}
         if algo == "mappo":
             actor_infos, critic_info = OnPolicyMARunner.train(self)
         else:
@@ -426,13 +433,14 @@ def run_harl_experiment(
         )
         if cfg.get("init_actor_dir"):
             load_actor_weights(runner, Path(cfg["init_actor_dir"]))
-        if cfg.get("warm_start") == "bc":
+        if cfg.get("warm_start") in ("bc", "distill"):
             from benchmarks.official.behaviour_cloning import bc_harl_actor, load_dataset
 
             if algo_args["model"]["use_recurrent_policy"]:
                 raise ValueError("BC warm start supports MLP actors only.")
-            data = load_dataset(stage, int(cfg.get("bc_episodes", 40)), env_kwargs)
-            logger.log_metrics(0, bc_harl_actor(runner, data, epochs=int(cfg.get("bc_epochs", 3))))
+            teacher = cfg.get("teacher_path") if cfg["warm_start"] == "distill" else None
+            data = load_dataset(stage, int(cfg.get("bc_episodes", 200)), env_kwargs, teacher)
+            logger.log_metrics(0, bc_harl_actor(runner, data, epochs=int(cfg.get("bc_epochs", 30)), batch_size=1024))
         meta = {
             "obs_dim": int(envs.observation_space[0].shape[0]),
             "act_dims": [int(dim) for dim in envs.action_space[0].nvec],
@@ -501,7 +509,7 @@ def run_harl_experiment(
             env_steps += episode_length * n_threads
             runner.compute()
             runner.prep_training()
-            train_metrics = runner.train_step(algo)
+            train_metrics = runner.train_step(algo, critic_only=update <= int(cfg.get("critic_warmup_updates", 0)))
             runner.after_update()
             train_metrics["train/fps"] = env_steps / max(1e-9, time.time() - start)
             logger.log_metrics(env_steps, train_metrics)

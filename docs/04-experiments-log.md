@@ -419,3 +419,27 @@ Rationale and decision: ADR-015. Budgets are in simulator ticks; with action rep
 | HARL-MAPPO Stage 3 (gate config) | 8 | 6M | 0.0 | 2.2 / 2.3 (2 seeds) | 60.8 / 58.1 | **+0.85 / +0.73** | 0.01–0.02 | 0.78–0.86 | ≈ 2,250 s |
 
 At equal wall time, k = 8 gives HARL three times more experience. Within the 2,250 s one 2M-tick gate seed took at k = 1, the k = 8 learner reaches 6M ticks and a positive return. The scratch MARL learners still let the Core fall in every episode: their mean distance to the Core is about 400 px, while the reference script holds a 240 px guard ring. The next round therefore tests a longer budget, a potential-based guard shaping, update intensity, a recurrent actor, and a behaviour-cloning warm start.
+
+### 4.5.9 What Makes Stage 3 Learnable: Budget, Recurrence, Warm Starts (single seed, k = 8)
+
+HARL-MAPPO on Stage 3, seed 0, gate hyperparameters unless noted, 32 `test` episodes (or the latest 16-episode `val` evaluation where marked). Ticks = 8 × decisions.
+
+| Variant | Ticks | Return | Win (%) | Kills / ep | Elem. acc. (%) | Core HP (%) | Move | Notes |
+| :--- | ---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| Scratch MLP 128 (gate config) | 6M | 0.85 | 0 | 2.2 | 60.8 | 0 | 0.86 | §4.5.8 |
+| Scratch MLP 128, schedule for 24M ticks | 6.1M (`val`) | 4.85 | 0 | 4.1 | 65.5 | 0 | 0.94 | slower LR decay; still running |
+| Scratch GRU 128 | 6M | 5.23 | 0 | 4.3 | 61.5 | 0 | 0.93 | |
+| Scratch MLP 128 + guard potential (`c = 10`) | 6M | 2.29 | 0 | 2.9 | 58.3 | 0 | 0.89 | potential-based, ADR-015 |
+| Scratch MLP 128, 16 minibatches × 10 epochs, lr 3e-4 | 3.7M (`val`) | −1.00 | 0 | 1.4 | 53.2 | 0 | 0.93 | stopped: worse |
+| Scratch MLP 256 | 3.3M (`val`) | 1.10 | 0 | 2.2 | 71.8 | 0 | 0.95 | running |
+| BC (40 episodes, 3 epochs) + RL | 2M | 1.77 | 0 | 3.0 | 68.5 | 0 | 0.46 | clone frozen at step 0 (`IDLE`) |
+| **BC (200 episodes, 30 epochs, MLP 256), clone only** | 0 | 52.76 (`val`) | 37.5 | 24.5 | 82.3 | 14.1 | 0.32 | no RL |
+| **BC + RL (10 critic-only warm-up updates)** | 2M | **68.69** | **50.0** | 30.8 | 86.7 | 13.5 | 0.37 | lr 5e-4, `entropy_coef` 0.01 |
+| reference: `heuristic_calibrated` | – | 87.59 | 78.1 | 37.9 | – | 21.1 | – | 96 `test` episodes |
+
+Findings:
+- The behaviour audit caught the first warm start. Cloned from too little data, the deterministic movement heads always chose "stay", so the policy never moved (`move_frac` 0.00, 2.1 deaths per episode). With 200 episodes and 30 epochs, held-out branch accuracy reaches 83% (moves), 82% (aim) and 96% (weapon), and the clone plays the game by itself.
+- RL fine-tuning after a critic-only warm-up improves on the clone instead of erasing it (return 52.8 → 68.7, win 37.5% → 50%). A single seed reaches 78% of the reference script's return with a 50% win rate, which already meets the Stage 3 acceptance bar (≥ 50% of the script's return and > 20% wins).
+- From scratch, a longer learning-rate schedule and a recurrent actor both help. No scratch run defends the Core yet: their mean distance to the Core is about 400 px, against 157 px for the cloned policy.
+
+Stage 2 PPO, seed 0, standard PPO settings, `val` evaluations at 1.2M ticks: from scratch the policy reaches 58.2% elemental accuracy and 2.8 kills. Started from the Stage 1 policy with its weapon head reset to uniform (`reset_weapon_head`), it reaches **83.1%** and 9.2 kills. The Stage 1 → 2 curriculum transfer is what unlocks the element-choice target.

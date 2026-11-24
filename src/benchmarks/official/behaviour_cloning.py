@@ -1,4 +1,8 @@
-"""Behaviour-cloning warm start for HARL and MAT actors from the calibrated script.
+"""Behaviour-cloning warm start for HARL and MAT actors.
+
+The teacher is either the calibrated script (``warm_start: bc``) or a learned
+single-agent SB3 PPO policy from Stage 2 (``warm_start: distill``), which works
+because every stage shares the same observation layout.
 
 The dataset (joint observations and script actions of every live agent) is
 collected once per stage on dedicated seeds, disjoint from the training, val and
@@ -19,12 +23,31 @@ BC_SEED_BASE = 5_000_003
 CACHE_DIR = Path("runs") / "bc"
 
 
-def collect_script_dataset(stage: int, n_episodes: int = 40, env_kwargs: Dict | None = None) -> Dict[str, np.ndarray]:
+class SB3TeacherPolicy:
+    """A single-agent SB3 PPO policy applied to every agent's own observation."""
+
+    def __init__(self, path: str):
+        from stable_baselines3 import PPO
+
+        self.model = PPO.load(path, device="cpu")
+
+    def reset(self, env) -> None:
+        pass
+
+    def act(self, env, obs):
+        names = env.possible_agents
+        actions, _ = self.model.predict(np.stack([obs[a] for a in names]), deterministic=True)
+        return {a: actions[i] for i, a in enumerate(names)}
+
+
+def collect_script_dataset(
+    stage: int, n_episodes: int = 40, env_kwargs: Dict | None = None, teacher: str | None = None
+) -> Dict[str, np.ndarray]:
     """Joint arrays: obs (N, n_agents, D), actions (N, n_agents, 4), alive (N, n_agents)."""
     from benchmarks.runners.run_marl_baselines import CalibratedPolicy
 
     env = DotShotParallelEnv(stage=stage, **(env_kwargs or {}))
-    policy = CalibratedPolicy()
+    policy = SB3TeacherPolicy(teacher) if teacher else CalibratedPolicy()
     obs_rows, act_rows, alive_rows = [], [], []
     for i in range(n_episodes):
         obs, _ = env.reset(seed=BC_SEED_BASE + 7919 * i)
@@ -45,19 +68,30 @@ def collect_script_dataset(stage: int, n_episodes: int = 40, env_kwargs: Dict | 
     }
 
 
-def load_dataset(stage: int, n_episodes: int = 40, env_kwargs: Dict | None = None) -> Dict[str, np.ndarray]:
+def load_dataset(
+    stage: int, n_episodes: int = 40, env_kwargs: Dict | None = None, teacher: str | None = None
+) -> Dict[str, np.ndarray]:
     import hashlib
     import json
 
     kwargs = {k: v for k, v in (env_kwargs or {}).items() if k != "stage" and v is not None}
-    tag = hashlib.sha1(json.dumps(kwargs, sort_keys=True).encode()).hexdigest()[:8] if kwargs else "default"
-    path = CACHE_DIR / f"stage{stage}_calibrated_{n_episodes}ep_{tag}.npz"
+    key = json.dumps({**kwargs, "teacher": teacher}, sort_keys=True) if (kwargs or teacher) else ""
+    tag = hashlib.sha1(key.encode()).hexdigest()[:8] if key else "default"
+    name = "teacher" if teacher else "calibrated"
+    path = CACHE_DIR / f"stage{stage}_{name}_{n_episodes}ep_{tag}.npz"
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = collect_script_dataset(stage, n_episodes, kwargs)
-        tmp = path.with_suffix(".tmp.npz")
+        data = collect_script_dataset(stage, n_episodes, kwargs, teacher)
+        import os
+
+        tmp = path.with_name(f"{path.stem}.{os.getpid()}.tmp.npz")
         np.savez_compressed(tmp, **data)
-        tmp.replace(path)  # atomic: parallel trials may race to build the cache
+        try:
+            tmp.replace(path)  # atomic: parallel runs may race to build the same cache
+        except PermissionError:  # Windows: another process holds the finished file
+            if not path.exists():
+                raise
+            tmp.unlink()
     with np.load(path) as f:
         return {k: f[k] for k in f.files}
 

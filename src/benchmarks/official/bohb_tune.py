@@ -87,7 +87,7 @@ def harl_space(trial: optuna.Trial, algo: str) -> Dict[str, Any]:
     if algo == "hatrpo":
         params["kl_threshold"] = trial.suggest_float("kl_threshold", 2e-3, 5e-2, log=True)
     else:
-        params["lr"] = trial.suggest_float("lr", 1e-4, 1e-3, log=True)
+        params["lr"] = trial.suggest_float("lr", 5e-5, 1e-3, log=True)
         params["actor_num_mini_batch"] = trial.suggest_categorical("actor_num_mini_batch", [1, 2, 4, 8])
         if algo == "haa2c":
             params["a2c_epoch"] = trial.suggest_int("a2c_epoch", 1, 5)
@@ -97,15 +97,16 @@ def harl_space(trial: optuna.Trial, algo: str) -> Dict[str, Any]:
     hidden = trial.suggest_categorical("hidden_size", [128, 256])
     params["hidden_sizes"] = [hidden, hidden]
     if trial.suggest_categorical("warm_start", ["scratch", "bc"]) == "bc":
-        params["warm_start"] = "bc"  # BC clones into an MLP actor
-    else:
-        params["use_recurrent_policy"] = trial.suggest_categorical("use_recurrent_policy", [False, True])
+        params.update(warm_start="bc", critic_warmup_updates=10)  # BC clones into an MLP actor
+    elif trial.suggest_categorical("use_recurrent_policy", [False, True]):
+        params.update(use_recurrent_policy=True,
+                      data_chunk_length=trial.suggest_categorical("data_chunk_length", [10, 20]))
     return params
 
 
 def mat_space(trial: optuna.Trial) -> Dict[str, Any]:
     params = {
-        "lr": trial.suggest_float("lr", 1e-4, 1e-3, log=True),
+        "lr": trial.suggest_float("lr", 5e-5, 1e-3, log=True),
         "entropy_coef": trial.suggest_float("entropy_coef", 1e-3, 3e-2, log=True),
         "clip_param": trial.suggest_categorical("clip_param", [0.1, 0.2, 0.3]),
         "ppo_epoch": trial.suggest_int("ppo_epoch", 3, 10),
@@ -168,7 +169,7 @@ def make_objective(study: str, args: argparse.Namespace) -> Callable[[optuna.Tri
     def objective(trial: optuna.Trial) -> float:
         cfg = trial_config(study, trial, args)
         trial.set_user_attr("config", cfg)
-        root = OPTUNA_DIR / study / f"trial_{trial.number}"
+        root = Path(args.db_dir) / study / f"trial_{trial.number}"
         finals = []
         for k, seed in enumerate(TRIAL_SEEDS):
             result = _train(cfg, seed, args.device, root / f"seed_{seed}", trial if k == 0 else None)
@@ -184,15 +185,25 @@ def make_objective(study: str, args: argparse.Namespace) -> Callable[[optuna.Tri
 # ----------------------------------------------------------------------------- studies
 
 
-def _storage(db_dir: Path, study: str) -> str:
-    db_dir.mkdir(parents=True, exist_ok=True)
-    return f"sqlite:///{(db_dir / f'{study}.db').resolve().as_posix()}"
+def _journal(db_dir: Path, study: str) -> Path:
+    return Path(db_dir) / f"{study}.journal"
+
+
+def _storage(db_dir: Path, study: str) -> optuna.storages.JournalStorage:
+    # Optuna's append-only journal file instead of SQLite: on this workstation Windows
+    # application control blocks SQLAlchemy's compiled extensions, which RDBStorage needs.
+    # The journal is multi-process safe, so several workers can share one study.
+    from optuna.storages.journal import JournalFileBackend, JournalFileOpenLock
+
+    path = _journal(db_dir, study)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return optuna.storages.JournalStorage(JournalFileBackend(str(path), lock_obj=JournalFileOpenLock(str(path))))
 
 
 def open_study(study: str, args: argparse.Namespace) -> optuna.Study:
     return optuna.create_study(
         study_name=study,
-        storage=optuna.storages.RDBStorage(_storage(args.db_dir, study), engine_kwargs={"connect_args": {"timeout": 60}}),
+        storage=_storage(args.db_dir, study),
         sampler=optuna.samplers.TPESampler(multivariate=True, seed=SAMPLER_SEED),
         pruner=optuna.pruners.HyperbandPruner(
             min_resource=args.min_resource, max_resource=args.max_resource, reduction_factor=3
@@ -203,7 +214,7 @@ def open_study(study: str, args: argparse.Namespace) -> optuna.Study:
 
 
 def load_study(study: str, db_dir: Path) -> Optional[optuna.Study]:
-    if not (db_dir / f"{study}.db").exists():
+    if not _journal(db_dir, study).exists():
         return None
     try:
         return optuna.load_study(study_name=study, storage=_storage(db_dir, study))
@@ -223,7 +234,7 @@ def stage1_reference(db_dir: Path) -> tuple:
     best = best_trial(load_study("s1_sb3_ppo", db_dir))
     if best is None:
         return None, None
-    ckpt = OPTUNA_DIR / "s1_sb3_ppo" / f"trial_{best.number}" / f"seed_{TRIAL_SEEDS[0]}" / "checkpoints" / "final.zip"
+    ckpt = Path(db_dir) / "s1_sb3_ppo" / f"trial_{best.number}" / f"seed_{TRIAL_SEEDS[0]}" / "checkpoints" / "final.zip"
     size = int(best.params["net_arch_size"])
     return (str(ckpt), [size, size]) if ckpt.exists() else (None, None)
 
@@ -281,9 +292,22 @@ def _summary(study: optuna.Study) -> Dict[str, Any]:
 def final_config(study: str, best_config: Dict[str, Any], final_steps: int) -> Dict[str, Any]:
     """Tuned config for the final runs: same hyperparameters, final budget, test-split scoring."""
     cfg = {k: v for k, v in best_config.items() if k not in ("final_eval_split", "init_model_path")}
-    cfg.update(total_steps=final_steps, eval_freq=max(100_000, final_steps // 20), n_eval_episodes=16,
+    cfg.update(total_steps=final_steps, eval_freq=final_steps // 20, n_eval_episodes=16,
                n_test_episodes=32, exp_name=study)
     return cfg
+
+
+def best_per_category(study: optuna.Study) -> Dict[str, optuna.trial.FrozenTrial]:
+    """Best complete trial per warm-start category ("scratch"/"bc", or "scratch"/"transfer" for SB3)."""
+    best: Dict[str, optuna.trial.FrozenTrial] = {}
+    for t in study.trials:
+        if t.state != optuna.trial.TrialState.COMPLETE:
+            continue
+        ws = t.params.get("warm_start", "scratch")
+        tag = {True: "transfer", False: "scratch"}.get(ws, ws)
+        if tag not in best or t.value > best[tag].value:
+            best[tag] = t
+    return best
 
 
 def export(args: argparse.Namespace) -> None:
@@ -293,17 +317,18 @@ def export(args: argparse.Namespace) -> None:
         if study is not None:
             entries[name] = _summary(study)
     written = []
-    for name, entry in entries.items():
-        if not entry["best_config"]:
-            continue
+    for name in entries:
         stage, _ = _parse(name)
-        steps = 2_000_000 if stage in (1, 2) else 4_000_000
-        path = CONFIG_DIR / f"{name}.yaml"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(f"# Exported by benchmarks.official.bohb_tune from study {name} (trial {entry['best_trial']}).\n")
-            yaml.safe_dump(final_config(name, entry["best_config"], steps), f, sort_keys=False)
-        written.append(path.relative_to(_REPO).as_posix())
+        steps = args.final_steps_sa if stage in (1, 2) else args.final_steps_marl
+        # One config per warm-start category, so final tables show scratch and warm-start rows.
+        for tag, trial in best_per_category(load_study(name, args.db_dir)).items():
+            path = CONFIG_DIR / f"{name}_{tag}.yaml"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(f"# Exported by benchmarks.official.bohb_tune from study {name}, trial {trial.number} "
+                        f"(mean final val return {trial.value:.3f}).\n")
+                yaml.safe_dump(final_config(f"{name}_{tag}", trial.user_attrs["config"], steps), f, sort_keys=False)
+            written.append(path.relative_to(_REPO).as_posix())
     summary = {
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "protocol": {
@@ -325,9 +350,12 @@ def main() -> None:
     parser.add_argument("--study", choices=STUDIES)
     parser.add_argument("--trials", type=int, default=24, help="complete + pruned trials per study")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
-    parser.add_argument("--min-resource", type=int, default=200_000)
-    parser.add_argument("--max-resource", type=int, default=1_000_000)
-    parser.add_argument("--eval-freq", type=int, default=200_000)
+    # Resources count decisions; at the default 8-tick interval 125k = 1M ticks and 500k = 4M ticks.
+    parser.add_argument("--min-resource", type=int, default=125_000)
+    parser.add_argument("--max-resource", type=int, default=500_000)
+    parser.add_argument("--eval-freq", type=int, default=62_500)
+    parser.add_argument("--final-steps-sa", type=int, default=500_000, help="decisions per final SB3 run")
+    parser.add_argument("--final-steps-marl", type=int, default=1_500_000, help="decisions per final MARL run")
     parser.add_argument("--n-eval", type=int, default=16, help="val episodes per pruning report")
     parser.add_argument("--n-final", type=int, default=32, help="val episodes scoring the final policy")
     parser.add_argument("--enqueue-from", default=None, help="study whose best params become the first trial")
