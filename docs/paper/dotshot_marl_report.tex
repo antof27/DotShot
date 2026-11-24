@@ -252,23 +252,32 @@ Weapons and enemies belong to $\{0: \text{Water}, 1: \text{Grass}, 2: \text{Fire
 \paragraph{Factored Action Space.}
 Each agent $i$ outputs a 4-tuple from \texttt{MultiDiscrete([3, 3, 32, 4])}: horizontal move $a_{i,0} \in \{-1, 0, +1\}$, vertical move $a_{i,1} \in \{-1, 0, +1\}$ (diagonal vectors normalized to unit speed), aim bin $a_{i,2} \in \{0, \dots, 31\}$ mapping to $\theta_k = 2\pi k / 32$ ($11.25^\circ$ resolution), and fire/ability command $a_{i,3} \in \{0, 1, 2, 3\}$, where $0$ holds fire (and triggers the Stage 4 class tactical ability when off cooldown with threats or wounded allies nearby) and $1, 2, 3$ fire Water, Grass, or Fire.
 
+\paragraph{Decision Interval.}
+Since DotShot v2.2, agents act every $k = 8$ simulator ticks: the chosen action is held for 8 ticks and the rewards are summed. A shot leaves only when the 12--16-tick fire cooldown has expired, so at one decision per tick the aim and weapon branches influenced the outcome on roughly one tick in twelve (Section~\ref{sec:m3fix}). Training budgets are reported in simulator ticks.
+
 \paragraph{Local Observation vs. Privileged Global State.}
-To enable direct policy transfer from Stage 2 to Stages 3 and 4 without reshaping tensors, every agent receives a fixed $129$-dimensional \texttt{float32} vector $o_i^t \in [-1, 1]^{129}$:
+To enable direct policy transfer from Stage 2 to Stages 3 and 4 without reshaping tensors, every agent receives a fixed $166$-dimensional \texttt{float32} vector $o_i^t \in [-1, 1]^{166}$ ($129$ dimensions in v2.1; the last three blocks below were added in v2.2):
 \begin{itemize}
     \item \textbf{Self-State (14):} normalized $(x, y)$, velocity $(v_x, v_y)$, HP ratio, fire and ability cooldowns, alive flag, last fired weapon one-hot (3), and class role one-hot (3).
     \item \textbf{Central Core State (5):} relative $(\Delta x, \Delta y)$, normalized distance, Core HP ratio, and under-attack flag (zeroed in Stages 1--2).
     \item \textbf{Obstacle LIDAR (8):} 8-direction raycast distances up to $480\text{ px}$ mapped to $[-1, 1]$.
     \item \textbf{Top-5 Visible Hostiles ($5 \times 15 = 75$):} relative $(\Delta x, \Delta y)$, $(\sin\theta, \cos\theta)$, normalized distance, enemy velocity $(v_x, v_y)$ for target leading, HP ratio, shield ratio, element one-hot (3), boss flag, marked flag, and active/LOS flag. In Stages 3--4 (\texttt{partial\_obs=True}), enemies beyond $760\text{ px}$ or occluded by cover blocks are masked to zero.
     \item \textbf{Teammates / Neutral Allies ($3 \times 9 = 27$):} relative $(\Delta x, \Delta y)$, distance, HP ratio, role/neutral one-hot (4), and alive flag.
+    \item \textbf{Incoming Enemy Projectiles ($4 \times 7 = 28$, v2.2):} the four projectiles in vision range that close on the agent soonest: relative position, velocity, time to closest approach, miss distance, and an active flag.
+    \item \textbf{Status and Core Threat ($5$, v2.2):} Vanguard shield timer, episode progress, and the direction to the enemy closest to the Core when one is within $300\text{ px}$ of it.
+    \item \textbf{Crosshair ($4$, v2.2):} element one-hot and flag of the visible enemy on the agent's current aim ray.
 \end{itemize}
-For centralized training, \texttt{env.state()} exposes the unoccluded global state $s^t$, concatenating all agent states ($N \times 14$), Core state ($5$), all active enemies up to $E_{\max}$ regardless of LOS occlusion ($E_{\max} \times 15$), and global wave progress ($4$).
+For centralized training, \texttt{env.state()} exposes the unoccluded global state $s^t$, concatenating all agent states with shield and respawn timers ($N \times 16$), Core state ($5$), all active enemies up to $E_{\max}$ regardless of LOS occlusion ($E_{\max} \times 15$), up to 16 enemy projectiles ($16 \times 5$), and global wave progress ($4$).
 
 \paragraph{Decomposed Reward Function.}
-Per-step rewards combine individual shaping with shared team outcomes via mixing coefficient $\alpha \in [0, 1]$:
+Stages 3 and 4 train on one shared team reward that every agent receives, alive or dead:
 \begin{equation}
-r_i^t = (1 - \alpha) r_{i,\text{indiv}}^t + \alpha r_{\text{team}}^t,
+r^t = \frac{1}{N}\sum_{i=1}^{N} r_{i,\text{indiv}}^t + r_{\text{team}}^t ,
 \end{equation}
-where $r_{i,\text{indiv}}^t$ rewards counter-element hits, target-leading precision, solo kills, Vanguard mitigation, Support repair/mark utility, and trigger discipline while penalizing wrong-element shots, missed shots (scaling softly with cumulative misses), friendly fire, damage taken, and death; $r_{\text{team}}^t$ rewards team eliminations, boss kills, shield breaks, multi-agent combo kills, wave clears, and Core healing while penalizing Core damage, Core loss, and teammate deaths.
+so a single centralized critic sees one reward, as the HAPPO/HATRPO improvement guarantees assume. The per-agent mixture $r_i^t = (1 - \alpha) r_{i,\text{indiv}}^t + \alpha r_{\text{team}}^t$ used up to Milestone 2 remains available as an ablation. Here $r_{i,\text{indiv}}^t$ rewards counter-element hits, target-leading precision, solo kills, Vanguard mitigation, and Support repair/mark utility, and penalizes wrong-element hits, missed shots, friendly fire, damage taken, and death. Since v2.2 it also pays aim shaping on firing ticks only, toward the lead point of the priority threat, and a fire-time element credit ($+1.5$ raw for the counter element, $-0.75$ raw for a wrong one, zero in expectation for a random weapon). $r_{\text{team}}^t$ rewards team eliminations, boss kills, shield breaks, multi-agent combo kills, wave clears, Core healing, and (v2.2) a victory bonus of $20 \times$ the remaining Core HP ratio, and it penalizes Core damage, Core loss, and teammate deaths.
+
+\paragraph{Episode End (v2.2).}
+In Stages 3 and 4, dead agents respawn at their spawn point after 150 ticks, and the episode ends only when the Core is destroyed (defeat) or when \texttt{max\_steps} is reached with the Core standing (victory, a terminal state). Stages 1 and 2 keep one life, and reaching \texttt{max\_steps} alive counts as a win.
 
 \subsection{Stage 4 Heterogeneous Squad Specification}
 
@@ -561,7 +570,7 @@ Visibility & \texttt{LOS\_ON} (occluded) & $-1.92\;[-2.15, -1.76]$ & $-1.77\;[-1
 Both ablations expose concrete behavioral trade-offs:
 \begin{itemize}
     \item \textbf{Individual Greed vs.\ Team Core Protection ($\alpha$ Sweep):} Across $\alpha \in \{0.00, 0.25, 0.50, 0.75, 1.00\}$, raw episodic return decreases from $-1.05$ ($\alpha = 0.00$) and $-1.04$ ($\alpha = 0.25$) down to $-2.46$ ($\alpha = 1.00$) because higher $\alpha$ weights multiply the shared Core-damage and Core-loss penalties directly. Behaviorally, $\alpha = 0.25$ produces the highest kill rate ($0.3$ kills/episode) alongside the lowest Core HP survival ($3.1\%$): agents optimize personal combat hits and kills while leaving the Core exposed. Raising $\alpha$ from $0.25$ to $0.50$, $0.75$, and $1.00$ drives Core HP survival upward monotonically ($3.1\% \to 13.7\% \to 16.0\% \to 19.6\%$), confirming that stronger team weighting shifts policies toward Core preservation even at the cost of lower personal offensive volume ($0.0$ kills/episode at $\alpha = 1.00$). Note that $\alpha = 0.00$ retains $17.2\%$ Core HP passively because agents occasionally draw nearby spawns away from the center without suffering Core-loss penalties.
-    \item \textbf{Full Arena Vision vs.\ Line-of-Sight Occlusion:} Removing LOS occlusion (\texttt{LOS\_OFF}) raises elemental accuracy by $10.6$ percentage points ($39.7\%$ vs.\ $29.1\%$) and increases kills/episode ($0.2$ vs.\ $0.1$) because Strikers observe enemies behind cover blocks and align counter-elements ahead of peek angles. Yet \texttt{LOS\_OFF} finishes with slightly lower return ($-2.15$ vs.\ $-1.92$) and Core HP ($10.2\%$ vs.\ $12.3\%$) than \texttt{LOS\_ON}: full vision tempts early policies into firing prematurely at enemies shielded behind cover blocks, accumulating $-0.04$ pillar-impact misses, whereas \texttt{LOS\_ON} masks occluded targets until line-of-sight opens, promoting tighter, more cautious Core-adjacent positioning.
+    \item \textbf{Full Arena Vision vs.\ Line-of-Sight Occlusion:} Removing LOS occlusion (\texttt{LOS\_OFF}) raises elemental accuracy by $10.6$ percentage points ($39.7\%$ vs.\ $29.1\%$) and increases kills/episode ($0.2$ vs.\ $0.1$) because Strikers observe enemies behind cover blocks and align counter-elements ahead of peek angles. Yet \texttt{LOS\_OFF} finishes with slightly lower return ($-2.15$ vs.\ $-1.92$) and Core HP ($10.2\%$ vs.\ $12.3\%$) than \texttt{LOS\_ON}. An earlier version of this report attributed the gap to $-0.04$ penalties for shots that hit pillars; the simulator never penalizes those shots (a bullet that hits cover is simply removed), so that explanation was wrong. With 3 seeds and overlapping intervals, the gap is not established. (These Milestone 2 runs also predate the bug fixes of Section~\ref{sec:m3fix}.)
 \end{itemize}
 
 \section{Milestone 3: Official Upstream Integrations, BOHB Tuning, and Converged 1M-Step Benchmarks}
