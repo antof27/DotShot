@@ -230,6 +230,7 @@ def run_baselines(cfg: dict, out_dir: Optional[str] = None) -> Dict[str, dict]:
         "reward_alpha": cfg.get("reward_alpha"),
         "max_steps": cfg.get("max_steps"),
         "reward_mode": cfg.get("reward_mode"),
+        "env_overrides": cfg.get("env_overrides"),
     }
     split = str(cfg.get("split", "test"))
     n_episodes = int(cfg.get("n_episodes", 32))

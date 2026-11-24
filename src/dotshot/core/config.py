@@ -136,6 +136,9 @@ class StageConfig:
     core_contact_mult: float = 0.045
     max_bullets_per_target: int = 2  # own bullets in flight toward one enemy
     fire_element_credit: float = 1.5  # raw reward at fire time: +c for the counter element, -c/2 for a wrong one
+    action_repeat: int = 8  # ticks per decision; the action is held and rewards summed (ADR-015)
+    guard_potential_coef: float = 0.0  # raw; >0 adds potential-based shaping toward the Core (team mode)
+    shaping_gamma: float = 0.99  # must equal the learner's per-decision discount
     aim_shaping_anneal_steps: int = 0  # >0: aim shaping decays linearly to 0 over this many env steps
     obstacles: Tuple[RectObstacle, ...] = field(default_factory=tuple)
 

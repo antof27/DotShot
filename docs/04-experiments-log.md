@@ -401,3 +401,21 @@ Configuration `configs/phase1/stage3_harl_mappo_gate2.yaml`, the attempt 1 learn
 | heuristic_calibrated | 32 episodes | 96.83 [93.41, 100.17] | 41.5 | 1960 | – | 71.9 |
 
 Gate checks: beats `noop` and `charge` beyond the CI, episode length above `charge`, but **kills 1.84 < 3**. The gate fails a second time. Validation kills rise on every seed from 0.0–0.2 at step 0 to 1.1–1.8 at 2M; they flatten over the last 0.4M steps while the linearly decaying learning rate approaches zero. The final policies still let the Core fall in every episode (Core damage −4.00 and Core destruction −1.20 on seed 4, against +0.91 for correct hits and +0.48 for kills), and the summed policy entropy stays at 6.1–6.2 of 7.05. Per `PROMPT_pc_full_run.md` §7 the run stops here for a decision on how to proceed.
+
+### 4.5.8 Decision Interval (Action Repeat) A/B and Behaviour Audit
+
+Rationale and decision: ADR-015. Budgets are in simulator ticks; with action repeat k an agent takes one decision every k ticks. Seed 0 unless noted, scored on 32 `test` episodes. "Hold" is the share of live-agent ticks spent holding fire, "Move" the share spent moving; both come from the new behaviour audit and stayed in a healthy range in every run (no idle, non-firing or suicidal policy).
+
+| Learner | k | Ticks | Win (%) | Kills / ep | Elem. acc. (%) | Return | Hold | Move | Wall time |
+| :--- | :---: | ---: | :---: | :---: | :---: | :---: | :---: | :---: | ---: |
+| SB3 PPO Stage 1 | 1 | 1M | 71.9 | 12.4 | 100 | 21.41 | – | – | – |
+| SB3 PPO Stage 1 | 8 | 2M | **100.0** | 14.8 | 100 | 31.93 | 0.12 | 0.96 | – |
+| SB3 PPO Stage 2 (standard PPO) | 1 | 1M | 6.2 | 3.6 | 62.3 | 6.19 | – | – | 892 s |
+| SB3 PPO Stage 2 (standard PPO) | 4 | 2M | 62.5 | 4.8 | 68.2 | 11.28 | 0.07 | 0.96 | 767 s |
+| SB3 PPO Stage 2 (standard PPO) | 8 | 2M | **96.9** | 4.7 | 61.6 | 11.56 | 0.03 | 0.99 | 586 s |
+| HARL-MAPPO Stage 3 (gate config) | 1 | 2M | 0.0 | 1.84 (5 seeds) | 39–57 | −1.64 | – | – | 2,222 s |
+| HARL-MAPPO Stage 3 (gate config) | 4 | 2M | 0.0 | 0.6–0.9 (2 seeds) | 42–55 | −1.91 / −2.64 | 0.04–0.14 | 0.79–0.99 | 979 s |
+| HARL-MAPPO Stage 3 (gate config) | 8 | 2M | 0.0 | 1.0 | 44.4 | −2.06 | 0.02 | 0.99 | 749 s |
+| HARL-MAPPO Stage 3 (gate config) | 8 | 6M | 0.0 | 2.2 / 2.3 (2 seeds) | 60.8 / 58.1 | **+0.85 / +0.73** | 0.01–0.02 | 0.78–0.86 | ≈ 2,250 s |
+
+At equal wall time, k = 8 gives HARL three times more experience. Within the 2,250 s one 2M-tick gate seed took at k = 1, the k = 8 learner reaches 6M ticks and a positive return. The scratch MARL learners still let the Core fall in every episode: their mean distance to the Core is about 400 px, while the reference script holds a 240 px guard ring. The next round therefore tests a longer budget, a potential-based guard shaping, update intensity, a recurrent actor, and a behaviour-cloning warm start.

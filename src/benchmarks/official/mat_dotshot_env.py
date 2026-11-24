@@ -22,6 +22,7 @@ class DotShotMATEnv:
         max_steps: Optional[int] = None,
         seed: int = 0,
         reward_mode: Optional[str] = None,
+        env_overrides: Optional[dict] = None,
     ):
         self.env = DotShotParallelEnv(
             stage=stage,
@@ -29,6 +30,7 @@ class DotShotMATEnv:
             reward_alpha=reward_alpha,
             max_steps=max_steps,
             reward_mode=reward_mode,
+            env_overrides=env_overrides,
         )
         self.n_agents = len(self.env.possible_agents)
         self._seed = int(seed)

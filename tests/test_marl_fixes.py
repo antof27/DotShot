@@ -221,5 +221,5 @@ def test_full_wipe_with_respawn_does_not_end_harl_episode():
     step_before = engine.step_count
     _, _, _, dones, _, _ = envs.step(np.ones((2, engine.cfg.num_agents, 4), dtype=np.int64))
     assert not dones[0].any()
-    assert engine.step_count == step_before + 1  # not reset
+    assert engine.step_count == step_before + engine.cfg.action_repeat  # not reset
     envs.close()

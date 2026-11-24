@@ -74,9 +74,10 @@ def evaluate_single_agent(
     split: str = "val",
     max_steps: int | None = None,
     prefix: str = "eval",
+    env_overrides: Dict[str, Any] | None = None,
 ) -> Dict[str, float]:
     """Exactly ``n_episodes`` episodes on a shared held-out seed split (see marl_eval)."""
-    env = DotShotSingleEnv(stage=stage, max_steps=max_steps)
+    env = DotShotSingleEnv(stage=stage, max_steps=max_steps, env_overrides=env_overrides)
     rows: List[Dict[str, Any]] = []
     for ep_seed in episode_seeds(split, n_episodes):
         obs, _ = env.reset(seed=ep_seed)
@@ -103,6 +104,10 @@ def evaluate_single_agent(
         f"{prefix}/elemental_accuracy": mean("elemental_accuracy"),
         f"{prefix}/hit_accuracy": mean("hit_accuracy"),
         f"{prefix}/episode_length": mean("episode_length"),
+        f"{prefix}/hold_frac": mean("hold_frac"),
+        f"{prefix}/move_frac": mean("move_frac"),
+        f"{prefix}/shots_per_100": mean("shots_per_100"),
+        f"{prefix}/deaths": mean("deaths"),
     }
     for key in sorted({k for r in rows for k in r.get("reward_components", {})}):
         metrics[f"{prefix}/rc_{key}"] = float(np.mean([r["reward_components"].get(key, 0.0) for r in rows]))
@@ -131,8 +136,10 @@ class SingleAgentEvalCallback(BaseCallback):
         logger: ExperimentLogger,
         max_steps: int | None = None,
         optuna_trial: Any = None,
+        env_overrides: Dict[str, Any] | None = None,
     ):
         super().__init__(verbose=0)
+        self.env_overrides = env_overrides
         self.stage = stage
         self.eval_freq = eval_freq
         self.n_eval_episodes = n_eval_episodes
@@ -157,6 +164,7 @@ class SingleAgentEvalCallback(BaseCallback):
             self.n_eval_episodes,
             "val",
             self.max_steps,
+            env_overrides=self.env_overrides,
         )
         metrics["train/fps"] = float(self.num_timesteps / elapsed)
         self.exp_logger.log_metrics(self.num_timesteps, metrics)
@@ -177,9 +185,9 @@ class SingleAgentEvalCallback(BaseCallback):
                 raise optuna.TrialPruned()
 
 
-def make_env_fn(stage: int, seed: int, rank: int, max_steps: int | None):
+def make_env_fn(stage: int, seed: int, rank: int, max_steps: int | None, env_overrides=None):
     def _init():
-        env = DotShotSingleEnv(stage=stage, max_steps=max_steps)
+        env = DotShotSingleEnv(stage=stage, max_steps=max_steps, env_overrides=env_overrides)
         env.reset(seed=seed + rank * 1000)
         return Monitor(env)
 
@@ -215,6 +223,7 @@ def run_experiment(
     exp_name = cfg.get("exp_name", f"stage{stage}_{algo}")
     run_dir = run_dir_override or os.path.join("runs", f"stage{stage}", algo, exp_name, f"seed_{seed}")
     init_model_path = init_model_path or cfg.get("init_model_path")
+    overrides = cfg.get("env_overrides")
 
     resolved_cfg = {**cfg, "seed": seed, "device": device, "total_steps": total_steps}
     if init_model_path:
@@ -229,7 +238,8 @@ def run_experiment(
                 if algo == "random"
                 else (lambda env, _obs: heuristic_policy_action(env))
             )
-            metrics = evaluate_single_agent(stage, fn, n_test, final_split, max_steps, prefix=final_prefix)
+            metrics = evaluate_single_agent(stage, fn, n_test, final_split, max_steps, prefix=final_prefix,
+                                            env_overrides=overrides)
             logger.log_metrics(total_steps, metrics)
             ret = metrics[f"{final_prefix}/return_mean"]
             print(f"[{algo.upper()} seed={seed}] {final_prefix} return {ret:.2f}")
@@ -238,7 +248,7 @@ def run_experiment(
         num_envs = int(cfg.get("num_envs", 8))
         # In-process envs: on Windows, subprocess IPC costs more than a simulator step.
         vec_type = cfg.get("vec_env", "dummy")
-        env_fns = [make_env_fn(stage, seed, i, max_steps) for i in range(num_envs)]
+        env_fns = [make_env_fn(stage, seed, i, max_steps, overrides) for i in range(num_envs)]
         vec_env = SubprocVecEnv(env_fns) if (vec_type == "subproc" and num_envs > 1) else DummyVecEnv(env_fns)
 
         lr = float(cfg.get("lr", 3e-4))
@@ -302,9 +312,10 @@ def run_experiment(
             reset_weapon_head(model)
 
         act_fn = lambda _env, obs: model.predict(obs, deterministic=True)[0]  # noqa: E731
-        cb = SingleAgentEvalCallback(stage, eval_freq, n_eval, logger, max_steps, optuna_trial=optuna_trial)
+        cb = SingleAgentEvalCallback(stage, eval_freq, n_eval, logger, max_steps, optuna_trial=optuna_trial,
+                                     env_overrides=overrides)
         if optuna_trial is None:
-            init_metrics = evaluate_single_agent(stage, act_fn, n_eval, "val", max_steps)
+            init_metrics = evaluate_single_agent(stage, act_fn, n_eval, "val", max_steps, env_overrides=overrides)
             logger.log_metrics(0, init_metrics)
             cb.best_return = float(init_metrics["eval/return_mean"])
             model.save(str(logger.ckpt_dir / "best.zip"))
@@ -314,7 +325,8 @@ def run_experiment(
             if cb.last_eval_step != cb.num_timesteps:
                 cb.evaluate()
             model.save(str(logger.ckpt_dir / "final.zip"))
-            final_metrics = evaluate_single_agent(stage, act_fn, n_test, final_split, max_steps, prefix=final_prefix)
+            final_metrics = evaluate_single_agent(stage, act_fn, n_test, final_split, max_steps, prefix=final_prefix,
+                                                  env_overrides=overrides)
             final_metrics["train/wall_time_s"] = time.time() - start
             logger.log_metrics(total_steps, final_metrics)
         finally:

@@ -118,3 +118,33 @@ def test_crosshair_reports_element_under_aim():
     assert block[ELEMENT_WATER] == 1.0 and block[3] == 1.0 and block.sum() == 2.0
     a.aim_dx, a.aim_dy = -1.0, 0.0  # aiming away
     assert e.get_local_obs(0)[-4:].sum() == 0.0
+
+
+def test_action_repeat_equals_repeated_ticks():
+    """action_repeat=k holds the action for k ticks and sums the rewards."""
+    one = DotShotEngine(stage=3, env_overrides={"action_repeat": 1})
+    four = DotShotEngine(stage=3, env_overrides={"action_repeat": 4})
+    one.reset(seed=3)
+    four.reset(seed=3)
+    act = {0: np.array([2, 1, 5, 2]), 1: np.array([0, 2, 20, 3])}
+    total = {0: 0.0, 1: 0.0}
+    for _ in range(4):
+        r, _, _, _ = one.step(act)
+        total = {k: total[k] + r[k] for k in total}
+    r4, _, _, info = four.step(act)
+    assert four.step_count == one.step_count == 4
+    assert r4 == pytest.approx(total)
+    assert 0.0 <= info["hold_frac"] <= 1.0 and info["move_frac"] == 1.0
+
+
+def test_guard_potential_telescopes():
+    """Potential-based shaping sums to -Phi(s0) over an episode when gamma = 1 (no exploitable loop)."""
+    e = DotShotEngine(stage=3, env_overrides={"guard_potential_coef": 10.0, "shaping_gamma": 1.0})
+    e.reset(seed=4)
+    phi0 = e._guard_potential()
+    rng = np.random.default_rng(0)
+    while True:
+        _, term, trunc, info = e.step({a.idx: rng.integers(0, [3, 3, 32, 4]) for a in e.agents})
+        if term or trunc:
+            break
+    assert info["reward_components"]["guard_potential"] == pytest.approx(-phi0, abs=1e-9)

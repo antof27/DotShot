@@ -18,13 +18,14 @@ class DotShotSingleEnv(gym.Env):
         stage: int = 1,
         render_mode: Optional[str] = None,
         max_steps: Optional[int] = None,
+        env_overrides: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
         if stage not in (1, 2):
             raise ValueError(f"DotShotSingleEnv supports stage 1 or 2, got {stage}.")
         self.stage = stage
         self.render_mode = render_mode
-        self.engine = DotShotEngine(stage=stage, max_steps=max_steps)
+        self.engine = DotShotEngine(stage=stage, max_steps=max_steps, env_overrides=env_overrides)
 
         self.action_space = spaces.MultiDiscrete([3, 3, self.engine.cfg.aim_bins, 4])
         self.observation_space = spaces.Box(

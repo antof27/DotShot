@@ -58,8 +58,9 @@ class DotShotEngine:
         reward_alpha: Optional[float] = None,
         max_steps: Optional[int] = None,
         reward_mode: Optional[str] = None,
+        env_overrides: Optional[Dict[str, Any]] = None,
     ):
-        base_cfg = get_stage_config(stage)
+        base_cfg = replace(get_stage_config(stage), **(env_overrides or {}))
         self.cfg: StageConfig = replace(
             base_cfg,
             partial_obs=base_cfg.partial_obs if partial_obs is None else partial_obs,
@@ -159,6 +160,12 @@ class DotShotEngine:
             "healing_done": 0.0,
             "marks_applied": 0.0,
             "win": 0.0,
+            # behaviour audit (per live agent tick)
+            "agent_ticks": 0.0,
+            "hold_ticks": 0.0,
+            "move_ticks": 0.0,
+            "deaths": 0.0,
+            "core_dist_sum": 0.0,
         }
 
         # Seed initial enemies on reset so observations are populated immediately
@@ -274,6 +281,41 @@ class DotShotEngine:
         return best_uid
 
     def step(self, actions: Dict[int, np.ndarray]) -> Tuple[Dict[int, float], bool, bool, Dict[str, Any]]:
+        """One decision: apply ``actions`` for ``cfg.action_repeat`` ticks (fewer if the episode ends).
+
+        Rewards are summed over the ticks; ``info`` is the last tick's.
+        """
+        total: Dict[int, float] = {}
+        phi = self._guard_potential()
+        for _ in range(max(1, self.cfg.action_repeat)):
+            rewards, terminated, truncated, info = self._tick(actions)
+            for idx, r in rewards.items():
+                total[idx] = total.get(idx, 0.0) + r
+            if terminated or truncated:
+                break
+        if self.cfg.guard_potential_coef:
+            # Potential-based shaping F = gamma * Phi(s') - Phi(s), Phi(terminal) = 0 (Ng et al., 1999).
+            done = terminated or truncated
+            shaping = (0.0 if done else self.cfg.shaping_gamma * self._guard_potential()) - phi
+            for idx in total:
+                total[idx] += shaping
+            comps = self.episode_reward_components
+            comps["guard_potential"] = comps.get("guard_potential", 0.0) + shaping
+            info["reward_components"] = dict(comps)
+        return total, terminated, truncated, info
+
+    def _guard_potential(self) -> float:
+        """Phi(s) = -coef/10 * mean normalized distance of live agents to the Core (0 without a Core)."""
+        if not self.cfg.guard_potential_coef or self.core is None:
+            return 0.0
+        alive = [a for a in self.agents if a.alive]
+        if not alive:
+            return 0.0
+        diag = float(np.hypot(self.cfg.width, self.cfg.height))
+        mean_d = sum(float(np.hypot(a.x - self.core.x, a.y - self.core.y)) for a in alive) / len(alive)
+        return -self.cfg.guard_potential_coef / 10.0 * mean_d / diag
+
+    def _tick(self, actions: Dict[int, np.ndarray]) -> Tuple[Dict[int, float], bool, bool, Dict[str, Any]]:
         self.step_count += 1
         self.lifetime_steps += 1
         self.visual_events = []
@@ -307,6 +349,12 @@ class DotShotEngine:
                 agent.repair_pulse_timer -= 1
 
             act = np.asarray(actions[agent.idx], dtype=np.int64)
+            tel = self.telemetry
+            tel["agent_ticks"] += 1.0
+            tel["hold_ticks"] += 1.0 if int(act[3]) == 0 else 0.0
+            tel["move_ticks"] += 1.0 if (act[0] != 1 or act[1] != 1) else 0.0
+            if self.core is not None:
+                tel["core_dist_sum"] += float(np.hypot(agent.x - self.core.x, agent.y - self.core.y))
             move_x = float(act[0] - 1)
             move_y = float(act[1] - 1)
             mag = float(np.hypot(move_x, move_y))
@@ -554,6 +602,7 @@ class DotShotEngine:
                         agent_events[agent.idx].died = True
                         team_events.any_agent_died = True
                         agent.respawn_timer = self.cfg.respawn_ticks
+                        self.telemetry["deaths"] += 1.0
 
             if self.core is not None and self.core.alive:
                 d_core = float(np.hypot(self.core.x - enemy.x, self.core.y - enemy.y))
@@ -595,6 +644,7 @@ class DotShotEngine:
                         agent_events[agent.idx].died = True
                         team_events.any_agent_died = True
                         agent.respawn_timer = self.cfg.respawn_ticks
+                        self.telemetry["deaths"] += 1.0
                     break
 
         # 5. Cleanup & spawning
@@ -661,8 +711,21 @@ class DotShotEngine:
             "reward_breakdown": breakdown,
             "reward_components": dict(self.episode_reward_components),
             "episode_length": self.step_count,
+            **self._behaviour(),
         }
         return rewards, terminated, truncated, info
+
+    def _behaviour(self) -> Dict[str, float]:
+        """Audit metrics that expose degenerate policies (idle, never firing, suicidal, fleeing)."""
+        t = self.telemetry
+        ticks = max(1.0, t["agent_ticks"])
+        return {
+            "hold_frac": t["hold_ticks"] / ticks,
+            "move_frac": t["move_ticks"] / ticks,
+            "shots_per_100": 100.0 * t["shots_fired"] / ticks,
+            "deaths": t["deaths"],
+            "core_dist": t["core_dist_sum"] / ticks if self.core is not None else 0.0,
+        }
 
     def _aim_shaping_scale(self) -> float:
         steps = self.cfg.aim_shaping_anneal_steps

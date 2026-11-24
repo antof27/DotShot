@@ -75,7 +75,7 @@ def test_obstacle_collision_and_los_blocking():
 
 
 def test_elemental_counter_damage_and_mismatch():
-    env = DotShotSingleEnv(stage=2)
+    env = DotShotSingleEnv(stage=2, env_overrides={"action_repeat": 1})  # tick-level mechanics
     env.reset(seed=42)
     env.engine.enemies.clear()
     env.engine.neutral_allies.clear()

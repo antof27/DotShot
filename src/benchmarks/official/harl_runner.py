@@ -383,6 +383,7 @@ def run_harl_experiment(
         "reward_alpha": cfg.get("reward_alpha"),
         "max_steps": cfg.get("max_steps"),
         "reward_mode": cfg.get("reward_mode"),
+        "env_overrides": cfg.get("env_overrides"),
     }
     total_steps = int(cfg.get("total_steps", 200_000))
     n_eval_episodes = int(cfg.get("n_eval_episodes", 16))
@@ -430,7 +431,7 @@ def run_harl_experiment(
 
             if algo_args["model"]["use_recurrent_policy"]:
                 raise ValueError("BC warm start supports MLP actors only.")
-            data = load_dataset(stage, int(cfg.get("bc_episodes", 40)))
+            data = load_dataset(stage, int(cfg.get("bc_episodes", 40)), env_kwargs)
             logger.log_metrics(0, bc_harl_actor(runner, data, epochs=int(cfg.get("bc_epochs", 3))))
         meta = {
             "obs_dim": int(envs.observation_space[0].shape[0]),

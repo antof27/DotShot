@@ -171,6 +171,7 @@ def run_mat_experiment(
         "reward_alpha": config.get("reward_alpha"),
         "max_steps": config.get("max_steps"),
         "reward_mode": config.get("reward_mode"),
+        "env_overrides": config.get("env_overrides"),
     }
     eval_freq = int(config.get("eval_freq", 100_000))
     n_eval_episodes = int(config.get("n_eval_episodes", 16))
@@ -208,7 +209,7 @@ def run_mat_experiment(
         if config.get("warm_start") == "bc":
             from benchmarks.official.behaviour_cloning import bc_mat, load_dataset
 
-            data = load_dataset(stage, int(config.get("bc_episodes", 40)))
+            data = load_dataset(stage, int(config.get("bc_episodes", 40)), env_kwargs)
             logger.log_metrics(0, bc_mat(policy, data, epochs=int(config.get("bc_epochs", 3))))
         trainer = MATTrainer(args, policy, n_agents, device=torch_device)
         # Integer actions need one column per branch; log-probs keep one joint column.

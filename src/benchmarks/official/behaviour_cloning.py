@@ -45,11 +45,16 @@ def collect_script_dataset(stage: int, n_episodes: int = 40, env_kwargs: Dict | 
     }
 
 
-def load_dataset(stage: int, n_episodes: int = 40) -> Dict[str, np.ndarray]:
-    path = CACHE_DIR / f"stage{stage}_calibrated_{n_episodes}ep.npz"
+def load_dataset(stage: int, n_episodes: int = 40, env_kwargs: Dict | None = None) -> Dict[str, np.ndarray]:
+    import hashlib
+    import json
+
+    kwargs = {k: v for k, v in (env_kwargs or {}).items() if k != "stage" and v is not None}
+    tag = hashlib.sha1(json.dumps(kwargs, sort_keys=True).encode()).hexdigest()[:8] if kwargs else "default"
+    path = CACHE_DIR / f"stage{stage}_calibrated_{n_episodes}ep_{tag}.npz"
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = collect_script_dataset(stage, n_episodes)
+        data = collect_script_dataset(stage, n_episodes, kwargs)
         tmp = path.with_suffix(".tmp.npz")
         np.savez_compressed(tmp, **data)
         tmp.replace(path)  # atomic: parallel trials may race to build the cache

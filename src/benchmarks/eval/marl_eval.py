@@ -23,6 +23,12 @@ EPISODE_KEYS = (
     "shield_breaks",
     "synergy_combos",
     "episode_length",
+    "hit_accuracy",
+    "hold_frac",
+    "move_frac",
+    "shots_per_100",
+    "deaths",
+    "core_dist",
 )
 
 
@@ -80,6 +86,8 @@ def summarize_episodes(episodes: List[Dict[str, Any]], prefix: str = "eval") -> 
         f"{prefix}/synergy_combos": float(np.mean([e["synergy_combos"] for e in episodes])),
         f"{prefix}/episode_length": float(np.mean([e["episode_length"] for e in episodes])),
     }
+    for key in ("hit_accuracy", "hold_frac", "move_frac", "shots_per_100", "deaths", "core_dist"):
+        metrics[f"{prefix}/{key}"] = float(np.mean([e[key] for e in episodes]))
     keys = sorted({k for e in episodes for k in e["reward_components"]})
     for key in keys:
         metrics[f"{prefix}/rc_{key}"] = float(

@@ -30,6 +30,7 @@ class DotShotHARLEnv:
         seed: int = 0,
         reward_mode: Optional[str] = None,
         state_type: str = "EP",
+        env_overrides: Optional[Dict[str, Any]] = None,
     ):
         if stage not in (3, 4):
             raise ValueError(f"DotShotHARLEnv supports stage 3 or 4, got {stage}.")
@@ -40,6 +41,7 @@ class DotShotHARLEnv:
             reward_alpha=reward_alpha,
             max_steps=max_steps,
             reward_mode=reward_mode,
+            env_overrides=env_overrides,
         )
         self.state_type = state_type
         self.n_agents: int = len(self.env.possible_agents)
