@@ -443,3 +443,17 @@ Findings:
 - From scratch, a longer learning-rate schedule and a recurrent actor both help. No scratch run defends the Core yet: their mean distance to the Core is about 400 px, against 157 px for the cloned policy.
 
 Stage 2 PPO, seed 0, standard PPO settings, `val` evaluations at 1.2M ticks: from scratch the policy reaches 58.2% elemental accuracy and 2.8 kills. Started from the Stage 1 policy with its weapon head reset to uniform (`reset_weapon_head`), it reaches **83.1%** and 9.2 kills. The Stage 1 → 2 curriculum transfer is what unlocks the element-choice target.
+
+### 4.5.10 Phase 3 Plan: Optuna Studies, Compute Estimate and Run Order
+
+Protocol (`src/benchmarks/official/bohb_tune.py`): one study per stage and learner (12 studies), 24 complete-or-pruned trials each, `TPESampler(multivariate=True, seed=42)` with `HyperbandPruner(min_resource=125k, max_resource=500k decisions, reduction_factor=3)`, which is 1M–4M ticks at k = 8. Pruning reports every 62.5k decisions (0.5M ticks) on 16 `val` episodes from seed 100. Trials that reach the maximum also train seed 101. The objective is the mean over both seeds of the final policy's return on 32 `val` episodes (never the best checkpoint, never step 0). Searched: actor and critic learning rates, entropy coefficient, clip range or HATRPO `kl_threshold`, PPO/A2C/critic epochs, minibatch counts, γ, GAE λ, hidden size (128/256), MLP vs GRU with chunk length (scratch only), and scratch vs BC warm start (Stages 3–4) or scratch vs Stage 1 transfer (Stage 2). MAT also searches blocks, embedding width and heads. Storage is Optuna's journal file under `runs/optuna/`, because Windows application control on the workstation blocks the SQLAlchemy extensions that SQLite storage needs.
+
+Estimate, from measured k = 8 throughput under 6-way load (HARL Stage 3 ≈ 25 min per 4M ticks, Stage 4 ≈ 1.5×, MAT ≈ 2×, SB3 ≈ 15 min per 4M ticks), assuming about 1.1 full single-seed runs per trial after pruning: Stage 3 HARL 4 × 11 h, Stage 3 MAT 22 h, Stage 4 HARL 4 × 17 h, Stage 4 MAT 33 h, SB3 2 × 3.5 h, about 180 core-hours in total, or roughly 30 h on 6 workers. That is under the 72 h limit, so no cuts are needed.
+
+Run order (parallel lanes via `scripts/optuna_lane.sh`; each Stage 4 study starts with the best Stage 3 parameters of the same learner as trial 0):
+1. `s1_sb3_ppo` → `s2_sb3_ppo` → `s3_mat` (second worker) → `s4_harl_haa2c`
+2. `s3_harl_mappo` → `s4_harl_mappo`
+3. `s3_harl_happo` → `s4_harl_happo`
+4. `s3_harl_hatrpo` → `s4_harl_hatrpo`
+5. `s3_mat` (CUDA) → `s4_mat` (CUDA)
+6. `s3_harl_haa2c` → `s4_mat` (second worker), started when the long scratch probe of §4.5.9 finishes

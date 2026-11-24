@@ -91,13 +91,16 @@ def main() -> None:
             cfg[key] = yaml.safe_load(value)
         cfg["config_path"] = pathlib.Path(cfg_path).as_posix()
         for seed in parse_seeds(args.seeds):
+            # "{seed}" in string values pairs runs across stages, e.g. Stage 2 seed k
+            # warm-starts from Stage 1 seed k's checkpoint.
+            seed_cfg = {k: v.format(seed=seed) if isinstance(v, str) and "{seed}" in v else v for k, v in cfg.items()}
             run_dir = pathlib.Path(args.out) / pathlib.Path(cfg_path).stem / f"seed_{seed}"
             if is_complete(run_dir):
                 print(f"skip (complete) {run_dir}", flush=True)
                 continue
             if run_dir.exists():
                 shutil.rmtree(run_dir)  # partial run from an interrupted launch
-            jobs.append((cfg, seed, args.device, str(run_dir)))
+            jobs.append((seed_cfg, seed, args.device, str(run_dir)))
 
     print(f"{len(jobs)} job(s), {args.workers} worker(s), device={args.device}", flush=True)
     if not jobs:
