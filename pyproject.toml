@@ -35,3 +35,5 @@ include = ["dotshot*", "benchmarks*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-m 'not slow'"
+markers = ["slow: multi-minute training sanity checks (run with `pytest -m slow`)"]

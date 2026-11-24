@@ -36,9 +36,16 @@ from dotshot.core.rewards import (
 )
 
 
-OBS_DIM = 129
 TOP_K_HOSTILES = 5
 TOP_M_TEAMMATES = 3
+TOP_K_PROJECTILES = 4  # v2.2: nearest incoming enemy projectiles in the local obs
+PROJ_FEATS = 7
+MAX_STATE_PROJECTILES = 16  # v2.2: enemy projectiles in the global state
+AGENT_STATE_FEATS = 16
+# 14 self + 5 core + 8 lidar + 5x15 hostiles + 3x9 teammates = 129 (v2.1)
+# + 4x7 projectiles + shield timer + time progress + 3 core-threat = 162 (v2.2)
+OBS_DIM = 129 + TOP_K_PROJECTILES * PROJ_FEATS + 5
+CORE_THREAT_RADIUS = 300.0
 
 
 class DotShotEngine:
@@ -50,6 +57,7 @@ class DotShotEngine:
         partial_obs: Optional[bool] = None,
         reward_alpha: Optional[float] = None,
         max_steps: Optional[int] = None,
+        reward_mode: Optional[str] = None,
     ):
         base_cfg = get_stage_config(stage)
         self.cfg: StageConfig = replace(
@@ -57,11 +65,17 @@ class DotShotEngine:
             partial_obs=base_cfg.partial_obs if partial_obs is None else partial_obs,
             reward_alpha=base_cfg.reward_alpha if reward_alpha is None else reward_alpha,
             max_steps=base_cfg.max_steps if max_steps is None else max_steps,
+            reward_mode=base_cfg.reward_mode if reward_mode is None else reward_mode,
         )
+        if self.cfg.reward_mode not in ("team", "mixed"):
+            raise ValueError(f"reward_mode must be 'team' or 'mixed', got {self.cfg.reward_mode!r}")
 
         self.np_random: np.random.Generator = np.random.default_rng(0)
         self.obs_dim = OBS_DIM
-        self.state_dim = self.cfg.num_agents * 14 + 5 + self.cfg.max_enemies * 15 + 4
+        self.state_dim = (
+            self.cfg.num_agents * AGENT_STATE_FEATS + 5 + self.cfg.max_enemies * 15 + MAX_STATE_PROJECTILES * 5 + 4
+        )
+        self.lifetime_steps = 0  # env steps over all episodes (drives aim-shaping annealing)
         self._los_obstacles = tuple(o for o in self.cfg.obstacles if o.blocks_los)
         self._vision_range_sq = self.cfg.vision_range * self.cfg.vision_range
 
@@ -83,6 +97,7 @@ class DotShotEngine:
         self.last_damage_sources: Dict[int, set] = {}
         self.episode_misses: Dict[int, int] = {}
         self.telemetry: Dict[str, float] = {}
+        self.episode_reward_components: Dict[str, float] = {}
 
     def _next_uid(self) -> int:
         self._uid_counter += 1
@@ -101,6 +116,7 @@ class DotShotEngine:
         self.kills_since_boss = 0
         self.last_damage_sources = {}
         self.visual_events = []
+        self.episode_reward_components = {}
 
         cx, cy = self.cfg.width * 0.5, self.cfg.height * 0.5
         self.core = CentralCore(x=cx, y=cy, max_hp=self.cfg.core_max_hp, hp=self.cfg.core_max_hp) if self.cfg.has_core else None
@@ -259,7 +275,13 @@ class DotShotEngine:
 
     def step(self, actions: Dict[int, np.ndarray]) -> Tuple[Dict[int, float], bool, bool, Dict[str, Any]]:
         self.step_count += 1
+        self.lifetime_steps += 1
         self.visual_events = []
+        for agent in self.agents:
+            if not agent.alive and agent.respawn_timer > 0:
+                agent.respawn_timer -= 1
+                if agent.respawn_timer == 0:
+                    agent.respawn()
 
         if self.core is not None and self.core.under_attack_timer > 0:
             self.core.under_attack_timer -= 1
@@ -313,23 +335,6 @@ class DotShotEngine:
             aim_dy = float(-np.sin(angle))
             agent.aim_dx, agent.aim_dy = aim_dx, aim_dy
 
-            # Aim alignment check against nearest visible enemy
-            visible_enemies = [e for e in self.enemies if e.alive and self._is_enemy_visible(agent, e)]
-            best_dot = -1.0
-            nearest_visible: Optional[Enemy] = None
-            if visible_enemies:
-                nearest_visible = min(
-                    visible_enemies,
-                    key=lambda e: (e.x - agent.x) ** 2 + (e.y - agent.y) ** 2,
-                )
-                tx, ty = nearest_visible.x - agent.x, nearest_visible.y - agent.y
-                td = float(np.hypot(tx, ty))
-                if td > 1e-6:
-                    best_dot = (tx * aim_dx + ty * aim_dy) / td
-                # Smooth cosine shaping across forward hemisphere replaces v2.0 >0.90 cliff
-                if best_dot > 0.0:
-                    ev.aim_alignment += (best_dot * best_dot) * 0.25
-
             weapon_action = int(act[3])
             if weapon_action == 0:
                 # Hold fire -> Stage 4 class ability only (removed passive trigger-discipline farming)
@@ -339,11 +344,24 @@ class DotShotEngine:
                 weapon_type = weapon_action - 1  # 0: Water, 1: Grass, 2: Fire
                 if agent.fire_cooldown == 0:
                     target_uid = self._find_ray_target_uid(agent, aim_dx, aim_dy)
-                    in_flight_same_target = (
-                        target_uid is not None
-                        and any(b.active and b.owner_idx == agent.idx and b.target_uid == target_uid for b in self.bullets)
-                    )
+                    in_flight_same_target = target_uid is not None and sum(
+                        1 for b in self.bullets if b.active and b.owner_idx == agent.idx and b.target_uid == target_uid
+                    ) >= self.cfg.max_bullets_per_target
                     if not in_flight_same_target:
+                        # Aim shaping on firing ticks only, toward the lead point of the priority threat.
+                        best_dot = -1.0
+                        threat = self._priority_threat(agent)
+                        if threat is not None:
+                            lx, ly = self._lead_point(agent, threat)
+                            td = float(np.hypot(lx - agent.x, ly - agent.y))
+                            if td > 1e-6:
+                                best_dot = ((lx - agent.x) * aim_dx + (ly - agent.y) * aim_dy) / td
+                            if best_dot > 0.0:
+                                ev.aim_alignment += best_dot * best_dot * self._aim_shaping_scale()
+                        if target_uid is not None and self.cfg.fire_element_credit:
+                            target = next(e for e in self.enemies if e.uid == target_uid)
+                            right = ELEMENT_COUNTERS[weapon_type] == target.enemy_type
+                            ev.fire_element_credit += self.cfg.fire_element_credit * (1.0 if right else -1.0)
                         well_aimed = best_dot >= 0.88
                         bx = agent.x + aim_dx * (agent.radius + 6.0)
                         by = agent.y + aim_dy * (agent.radius + 6.0)
@@ -511,7 +529,7 @@ class DotShotEngine:
                                 dx=dx / dist,
                                 dy=dy / dist,
                                 element_type=enemy.enemy_type,
-                                damage=14.0 if enemy.is_boss else 10.0,
+                                damage=self.cfg.enemy_bullet_damage * (1.4 if enemy.is_boss else 1.0),
                             )
                         )
                     enemy.shoot_cooldown = int(self.np_random.integers(75, 130))
@@ -524,7 +542,7 @@ class DotShotEngine:
                 if d_ag < 140.0:
                     agent_events[agent.idx].proximity_danger += (140.0 - d_ag) / 140.0 * 0.25
                 if d_ag <= agent.radius + enemy.radius:
-                    raw_dmg = enemy.contact_damage_rate * 0.04
+                    raw_dmg = enemy.contact_damage_rate * self.cfg.agent_contact_mult
                     taken = agent.take_damage(raw_dmg)
                     agent_events[agent.idx].damage_taken += taken
                     if agent.shield_active_timer > 0:
@@ -533,11 +551,12 @@ class DotShotEngine:
                     if not agent.alive:
                         agent_events[agent.idx].died = True
                         team_events.any_agent_died = True
+                        agent.respawn_timer = self.cfg.respawn_ticks
 
             if self.core is not None and self.core.alive:
                 d_core = float(np.hypot(self.core.x - enemy.x, self.core.y - enemy.y))
                 if d_core <= self.core.radius + enemy.radius:
-                    taken = self.core.take_damage(enemy.contact_damage_rate * 0.045)
+                    taken = self.core.take_damage(enemy.contact_damage_rate * self.cfg.core_contact_mult)
                     team_events.core_damage_taken += taken
 
         # 4. Update enemy projectiles
@@ -573,6 +592,7 @@ class DotShotEngine:
                     if not agent.alive:
                         agent_events[agent.idx].died = True
                         team_events.any_agent_died = True
+                        agent.respawn_timer = self.cfg.respawn_ticks
                     break
 
         # 5. Cleanup & spawning
@@ -593,15 +613,20 @@ class DotShotEngine:
             self.visual_events.append({"type": "callout", "x": self.cfg.width * 0.5, "y": 90, "text": f"WAVE {self.wave_index}", "color": (248, 250, 252)})
 
         # 6. Termination & Truncation
-        all_agents_dead = not any(a.alive for a in self.agents)
+        # With respawn (v2.2 core stages) only the Core's death ends an episode early.
+        all_agents_dead = not any(a.alive for a in self.agents) and self.cfg.respawn_ticks == 0
         core_destroyed = self.core is not None and not self.core.alive
         team_events.core_destroyed = core_destroyed
         team_events.core_alive = self.core.alive if self.core is not None else True
 
         terminated = bool(all_agents_dead or core_destroyed)
-        truncated = bool((not terminated) and (self.step_count >= self.cfg.max_steps))
-        if truncated:
+        reached_limit = (not terminated) and self.step_count >= self.cfg.max_steps
+        truncated = bool(reached_limit and not self.cfg.victory_terminal)
+        if reached_limit:
             self.telemetry["win"] = 1.0
+            core_ratio = (self.core.hp / self.core.max_hp) if self.core is not None else 1.0
+            team_events.win_bonus = self.cfg.win_bonus * core_ratio
+            terminated = terminated or self.cfg.victory_terminal
 
         rewards, breakdown = compute_decomposed_rewards(
             agent_events=agent_events,
@@ -609,7 +634,10 @@ class DotShotEngine:
             alpha=self.cfg.reward_alpha,
             num_agents=self.cfg.num_agents,
             episode_misses=self.episode_misses,
+            team_shared=self.cfg.reward_mode == "team",
         )
+        for key, val in breakdown.pop("components").items():
+            self.episode_reward_components[key] = self.episode_reward_components.get(key, 0.0) + val
 
         shots = max(1.0, self.telemetry["shots_fired"])
         total_hits = self.telemetry["hits_correct"] + self.telemetry["hits_wrong"]
@@ -629,8 +657,34 @@ class DotShotEngine:
             "core_hp_ratio": (self.core.hp / self.core.max_hp) if self.core is not None else 1.0,
             "win": self.telemetry["win"],
             "reward_breakdown": breakdown,
+            "reward_components": dict(self.episode_reward_components),
+            "episode_length": self.step_count,
         }
         return rewards, terminated, truncated, info
+
+    def _aim_shaping_scale(self) -> float:
+        steps = self.cfg.aim_shaping_anneal_steps
+        return 1.0 if steps <= 0 else max(0.0, 1.0 - self.lifetime_steps / steps)
+
+    def _priority_threat(self, agent: AgentState) -> Optional[Enemy]:
+        """Visible enemy closest to the Core if one is within CORE_THREAT_RADIUS, else the nearest visible one."""
+        visible = [e for e in self.enemies if e.alive and self._is_enemy_visible(agent, e)]
+        if not visible:
+            return None
+        if self.core is not None:
+            near_core = [e for e in visible if np.hypot(e.x - self.core.x, e.y - self.core.y) <= CORE_THREAT_RADIUS]
+            if near_core:
+                return min(near_core, key=lambda e: (e.x - self.core.x) ** 2 + (e.y - self.core.y) ** 2)
+        return min(visible, key=lambda e: (e.x - agent.x) ** 2 + (e.y - agent.y) ** 2)
+
+    @staticmethod
+    def _lead_point(agent: AgentState, enemy: Enemy) -> Tuple[float, float]:
+        """Linear intercept point, two fixed-point iterations."""
+        px, py = enemy.x, enemy.y
+        for _ in range(2):
+            t = float(np.hypot(px - agent.x, py - agent.y)) / max(1.0, agent.bullet_speed)
+            px, py = enemy.x + enemy.vx * t, enemy.y + enemy.vy * t
+        return px, py
 
     def _trigger_class_ability(self, agent: AgentState, ev: AgentStepEvents, team_events: TeamStepEvents) -> None:
         if agent.role_id == ROLE_VANGUARD:
@@ -690,7 +744,7 @@ class DotShotEngine:
         return self.cfg.width * 0.5, self.cfg.height * 0.5
 
     def get_local_obs(self, agent_idx: int) -> np.ndarray:
-        """Build 129-dim normalized observation vector in [-1.0, 1.0] for agent_idx."""
+        """Build the OBS_DIM-dim normalized observation vector in [-1.0, 1.0] for agent_idx."""
         agent = self.agents[agent_idx]
         w, h = float(self.cfg.width), float(self.cfg.height)
         diag = float(np.hypot(w, h))
@@ -780,6 +834,52 @@ class DotShotEngine:
                 obs[ptr + 8] = 1.0 if is_alive else -1.0
             ptr += 9
 
+        # 6. v2.2: nearest incoming enemy projectiles (4 x 7)
+        threats = []
+        for eb in self.enemy_bullets:
+            if not eb.active:
+                continue
+            rx, ry = eb.x - agent.x, eb.y - agent.y
+            if rx * rx + ry * ry > self._vision_range_sq:
+                continue  # shortcut: range check only, no LOS test (projectiles die on pillars anyway)
+            vx, vy = eb.dx * eb.speed, eb.dy * eb.speed
+            closing = -(rx * vx + ry * vy)
+            if closing <= 0.0:
+                continue  # moving away
+            tca = closing / max(1e-6, vx * vx + vy * vy)
+            miss = float(np.hypot(rx + vx * tca, ry + vy * tca))
+            threats.append((tca, rx, ry, vx, vy, miss))
+        threats.sort(key=lambda t: t[0])
+        for k in range(TOP_K_PROJECTILES):
+            if k < len(threats):
+                tca, rx, ry, vx, vy, miss = threats[k]
+                obs[ptr] = rx / w
+                obs[ptr + 1] = ry / h
+                obs[ptr + 2] = vx / 6.0
+                obs[ptr + 3] = vy / 6.0
+                obs[ptr + 4] = min(tca, 120.0) / 60.0 - 1.0
+                obs[ptr + 5] = min(miss, 200.0) / 100.0 - 1.0
+                obs[ptr + 6] = 1.0
+            ptr += PROJ_FEATS
+
+        # 7. v2.2: shield timer, episode progress, direction to the enemy closest to the Core
+        obs[ptr] = (agent.shield_active_timer / 90.0) * 2.0 - 1.0
+        obs[ptr + 1] = (self.step_count / max(1, self.cfg.max_steps)) * 2.0 - 1.0
+        if self.core is not None:
+            attackers = [
+                e for e in self.enemies
+                if e.alive and np.hypot(e.x - self.core.x, e.y - self.core.y) <= CORE_THREAT_RADIUS
+            ]
+            if attackers:
+                a = min(attackers, key=lambda e: (e.x - self.core.x) ** 2 + (e.y - self.core.y) ** 2)
+                d = max(1e-6, float(np.hypot(a.x - agent.x, a.y - agent.y)))
+                obs[ptr + 2] = (a.x - agent.x) / d
+                obs[ptr + 3] = (a.y - agent.y) / d
+                obs[ptr + 4] = 1.0
+            else:
+                obs[ptr + 4] = -1.0
+        ptr += 5
+
         return np.clip(obs, -1.0, 1.0)
 
     def get_global_state(self) -> np.ndarray:
@@ -805,7 +905,9 @@ class DotShotEngine:
             else:
                 state[ptr + 7] = -1.0
                 state[ptr + 11 + agent.role_id] = 1.0
-            ptr += 14
+            state[ptr + 14] = (agent.shield_active_timer / 90.0) * 2.0 - 1.0
+            state[ptr + 15] = (agent.respawn_timer / max(1, self.cfg.respawn_ticks)) * 2.0 - 1.0
+            ptr += AGENT_STATE_FEATS
 
         if self.core is not None:
             state[ptr] = (self.core.x / w) * 2.0 - 1.0
@@ -837,6 +939,18 @@ class DotShotEngine:
                 state[ptr + 13] = 1.0 if e.shield_broken_timer > 0 else -1.0
                 state[ptr + 14] = 1.0
             ptr += 15
+
+        active_bullets = [eb for eb in self.enemy_bullets if eb.active]
+        active_bullets.sort(key=lambda eb: (eb.x - cx) ** 2 + (eb.y - cy) ** 2)
+        for k in range(MAX_STATE_PROJECTILES):
+            if k < len(active_bullets):
+                eb = active_bullets[k]
+                state[ptr] = (eb.x / w) * 2.0 - 1.0
+                state[ptr + 1] = (eb.y / h) * 2.0 - 1.0
+                state[ptr + 2] = eb.dx
+                state[ptr + 3] = eb.dy
+                state[ptr + 4] = 1.0
+            ptr += 5
 
         state[ptr] = float(np.clip(self.wave_index / 10.0, 0.0, 1.0)) * 2.0 - 1.0
         state[ptr + 1] = (len(active_enemies) / max(1, self.cfg.max_enemies)) * 2.0 - 1.0

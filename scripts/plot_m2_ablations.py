@@ -24,14 +24,14 @@ def plot_ablations(out_path: str = "docs/assets/figures/m2_ablations_alpha_los.p
     # Panel 1: Alpha IQM Return + 95% CI & Core HP %
     alphas_sorted = sorted(alpha_summary.keys())
     x_vals = [float(k.replace("alpha_", "").replace("_", ".")) for k in alphas_sorted]
-    iqms = [alpha_summary[k]["eval/return_mean"]["final"]["iqm"] for k in alphas_sorted]
-    lo_err = [iqms[i] - alpha_summary[k]["eval/return_mean"]["final"]["ci_low"] for i, k in enumerate(alphas_sorted)]
-    hi_err = [alpha_summary[k]["eval/return_mean"]["final"]["ci_high"] - iqms[i] for i, k in enumerate(alphas_sorted)]
-    core_hps = [alpha_summary[k]["eval/core_hp_ratio"]["final"]["iqm"] * 100.0 for k in alphas_sorted]
+    iqms = [alpha_summary[k]["return_mean"]["mean"] for k in alphas_sorted]
+    lo_err = [iqms[i] - alpha_summary[k]["return_mean"]["mean_ci_low"] for i, k in enumerate(alphas_sorted)]
+    hi_err = [alpha_summary[k]["return_mean"]["mean_ci_high"] - iqms[i] for i, k in enumerate(alphas_sorted)]
+    core_hps = [alpha_summary[k]["core_hp_ratio"]["mean"] * 100.0 for k in alphas_sorted]
 
-    ax1.errorbar(x_vals, iqms, yerr=[lo_err, hi_err], fmt="-o", color="#0072B2", linewidth=2.2, capsize=4, label="Return IQM [95% CI]")
+    ax1.errorbar(x_vals, iqms, yerr=[lo_err, hi_err], fmt="-o", color="#0072B2", linewidth=2.2, capsize=4, label="Return mean [95% CI]")
     ax1.set_xlabel(r"Team Reward Mixing Weight $\alpha$")
-    ax1.set_ylabel("Final Return IQM", color="#0072B2")
+    ax1.set_ylabel("Final return (mean)", color="#0072B2")
     ax1.tick_params(axis="y", labelcolor="#0072B2")
     ax1.set_xticks(x_vals)
     ax1.grid(True, linestyle="--", alpha=0.3)

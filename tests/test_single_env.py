@@ -11,6 +11,7 @@ import pytest
 import dotshot  # noqa: F401
 from dotshot.core.arena import has_line_of_sight, resolve_circle_obstacles
 from dotshot.core.config import ELEMENT_FIRE, ELEMENT_GRASS, ELEMENT_WATER, RectObstacle
+from dotshot.core.engine import OBS_DIM
 from dotshot.core.entities import Enemy
 from dotshot.envs.single_agent import DotShotSingleEnv
 
@@ -31,7 +32,7 @@ def test_gymnasium_env_checker(stage, env_id):
     env = gym.make(env_id)
     check_env(env.unwrapped, skip_render_check=True)
     obs, info = env.reset(seed=123)
-    assert obs.shape == (129,)
+    assert obs.shape == (OBS_DIM,)
     assert obs.dtype == np.float32
     assert np.all(obs >= -1.0) and np.all(obs <= 1.0)
     assert info["stage"] == stage

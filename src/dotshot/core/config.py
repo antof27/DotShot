@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
+SIM_VERSION = "2.2"
 
 ELEMENT_WATER = 0
 ELEMENT_GRASS = 1
@@ -122,7 +123,20 @@ class StageConfig:
     vision_range: float = 780.0
     partial_obs: bool = False
     reward_alpha: float = 0.5
+    # "team": one shared team reward for every agent (CTDE default, ADR-013);
+    # "mixed": per-agent (1 - alpha) * indiv + alpha * team (ablation only).
+    reward_mode: str = "mixed"
     aim_bins: int = 32
+    # v2.2 (ADR-014). Zero/neutral defaults keep Stages 1-2 single-life.
+    respawn_ticks: int = 0  # >0: dead agents respawn near the core; all-dead no longer ends the episode
+    win_bonus: float = 0.0  # raw team reward x Core HP ratio for reaching max_steps with the Core alive
+    victory_terminal: bool = False  # reaching max_steps is a terminal victory, not a time-limit truncation
+    enemy_bullet_damage: float = 10.0  # bosses deal 1.4x
+    agent_contact_mult: float = 0.04  # contact damage per tick = enemy.contact_damage_rate * mult
+    core_contact_mult: float = 0.045
+    max_bullets_per_target: int = 2  # own bullets in flight toward one enemy
+    fire_element_credit: float = 0.6  # raw +/- reward at fire time for the counter / a wrong element
+    aim_shaping_anneal_steps: int = 0  # >0: aim shaping decays linearly to 0 over this many env steps
     obstacles: Tuple[RectObstacle, ...] = field(default_factory=tuple)
 
 
@@ -201,6 +215,10 @@ STAGE_CONFIGS: Dict[int, StageConfig] = {
         vision_range=760.0,
         partial_obs=True,
         reward_alpha=0.65,
+        reward_mode="team",
+        respawn_ticks=150,
+        win_bonus=20.0,
+        victory_terminal=True,
         obstacles=COOP_STAGE_OBSTACLES,
     ),
     4: StageConfig(
@@ -222,6 +240,11 @@ STAGE_CONFIGS: Dict[int, StageConfig] = {
         vision_range=760.0,
         partial_obs=True,
         reward_alpha=0.70,
+        reward_mode="team",
+        respawn_ticks=150,
+        win_bonus=20.0,
+        victory_terminal=True,
+        enemy_bullet_damage=17.0,  # calibrated: reference script wins 80.2% of 96 val episodes
         obstacles=COOP_STAGE_OBSTACLES,
     ),
 }

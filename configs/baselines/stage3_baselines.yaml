@@ -1,0 +1,6 @@
+# Scripted Stage 3 baselines, evaluated with benchmarks.eval.marl_eval.
+stage: 3
+policies: [random, noop, charge, heuristic_nearest, heuristic_core_guard, heuristic_calibrated]
+n_episodes: 32
+split: test
+seed: 0

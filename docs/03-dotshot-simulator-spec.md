@@ -57,27 +57,46 @@ Every agent $i$ selects a 4-tuple from `MultiDiscrete([3, 3, 32, 4])`:
 - $a_{i,2} \in \{0, \dots, 31\}$ aim angle $\theta_k = \frac{2\pi k}{32}$ (`11.25°` bins).
 - $a_{i,3} \in \{0, 1, 2, 3\}$: `0` holds fire (and triggers the Stage 4 class tactical ability when cooldown is ready and threats or wounded allies are in range), `1` fires Water, `2` fires Grass, `3` fires Fire.
 
-### Local Observation $o_i^t \in [-1, 1]^{129}$ vs Privileged Global State $s^t$
+### Local Observation $o_i^t \in [-1, 1]^{162}$ vs Privileged Global State $s^t$
 
-To support direct Stage 2 $\to$ Stage 3/4 transfer without tensor reshaping, every agent across all stages receives a fixed `129`-dimensional `float32` observation vector:
+To support direct Stage 2 $\to$ Stage 3/4 transfer without tensor reshaping, every agent across all stages receives a fixed `162`-dimensional `float32` observation vector (`129` in v2.1; blocks 6 and 7 were added in v2.2, ADR-014). A dead agent observes all zeros:
 1. **Self-State (`14`)**: normalized $(x, y)$, normalized velocity $(v_x, v_y)$, HP ratio, fire cooldown, ability cooldown, alive flag, last fired weapon one-hot (3), class role one-hot (3).
 2. **Central Core State (`5`)**: relative $(\Delta x, \Delta y)$, normalized distance, Core HP ratio, Core under-attack flag (`0` in Stages 1–2).
 3. **Obstacle / Wall LIDAR (`8`)**: 8-direction raycast distances (`max_range = 480 px`) mapped into `[-1, 1]`.
 4. **Top-5 Visible Hostiles (`5 × 15 = 75`)**: relative $(\Delta x, \Delta y)$, $(\sin\theta, \cos\theta)$, normalized distance, enemy velocity $(v_x, v_y)$ for target leading, HP ratio, boss shield ratio, element one-hot (3), boss flag, marked debuff flag, active/LOS flag. In Stages 3–4 (`partial_obs=True`), enemies beyond `760 px` or occluded by cover blocks are masked out.
 5. **Teammates / Neutral Allies (`3 × 9 = 27`)**: relative $(\Delta x, \Delta y)$, distance, HP ratio, role/neutral one-hot (4), alive flag.
+6. **Incoming Enemy Projectiles (`4 × 7 = 28`, v2.2)**: the four projectiles within vision range that are closing on the agent, sorted by time to closest approach: relative $(\Delta x, \Delta y)$, velocity $(v_x, v_y)$, time to closest approach, miss distance at closest approach, active flag.
+7. **Status and Core Threat (`5`, v2.2)**: Vanguard shield timer, episode progress `step / max_steps`, unit direction to the enemy closest to the Core when one is within `300 px` of it, and a flag for that case.
 
-During training, `env.state()` exposes the privileged noise-free global state $s^t$ containing all agent states (`N × 14`), Core state (`5`), all active enemies up to `max_enemies` regardless of LOS occlusion (`E_max × 15`), and global wave progress (`4`).
+During training, `env.state()` exposes the privileged noise-free global state $s^t$ containing all agent states (`N × 16`, with shield and respawn timers since v2.2), Core state (`5`), all active enemies up to `max_enemies` regardless of LOS occlusion (`E_max × 15`), up to 16 active enemy projectiles (`16 × 5`, v2.2), and global wave progress (`4`). Stage 3 has $|s^t| = 241$ and Stage 4 has $|s^t| = 287$.
 
 ### Decomposed Individual/Team Reward Function
 
-Per-step reward mixes individual combat shaping with team outcomes via explicit parameter $\alpha \in [0, 1]$:
+Since the Milestone 3 performance fix (ADR-013), Stages 3–4 train on **one shared team reward** (`reward_mode: team`): every agent, alive or dead, receives
+
+$$r^t = \frac{1}{N}\sum_{i=1}^{N} r_{i,\text{indiv}}^t + r_{\text{team}}^t ,$$
+
+so the individual combat terms stay in the signal and a single centralized critic sees one reward. The earlier per-agent mixing with parameter $\alpha \in [0, 1]$ remains available as an ablation (`reward_mode: mixed`):
 
 $$r_i^t = (1 - \alpha) r_{i,\text{indiv}}^t + \alpha r_{\text{team}}^t$$
 
 - **$r_{i,\text{indiv}}^t$**: rewards correct hits, precision target-leading hits, solo kills, Vanguard damage absorption, Support heal/mark utility, and smooth forward-hemisphere aim alignment; penalizes wrong-element shots, missed shots (`-0.04` flat penalty per miss), friendly fire, contact/projectile damage, proximity danger, and death.
-- **$r_{\text{team}}^t$**: rewards team eliminations, boss kills, shield breaks, multi-agent combo kills, wave clears, and Core healing; penalizes Core damage, Core destruction, and teammate deaths.
+- **$r_{\text{team}}^t$**: rewards team eliminations, boss kills, shield breaks, multi-agent combo kills, wave clears, Core healing, and (v2.2) a victory bonus of `20 raw × Core HP ratio`; penalizes Core damage, Core destruction, and teammate deaths.
 
-Exposing $\alpha$ in YAML configs enables controlled credit-assignment ablations without touching simulator code.
+Each episode's `info["reward_components"]` holds every named term's contribution to the per-agent-mean return, so learning curves can be broken down by term.
+
+### DotShot v2.2 Rules (ADR-014)
+
+| Rule | v2.1 | v2.2 |
+| :--- | :--- | :--- |
+| Agent death (Stages 3–4) | Permanent; all agents dead ends the episode | Respawn at the spawn point after `150` ticks; only Core destruction ends the episode early |
+| Reaching `max_steps` | Truncation (`win = 1`), no bonus | Terminal victory with `+20 raw × Core HP ratio` (Stages 3–4); Stages 1–2 unchanged |
+| Aim shaping | Every tick, toward the current position of the nearest visible enemy | Only on ticks where a shot is fired, toward the lead point of the priority threat |
+| Element choice | Rewarded only on impact | Also `±0.6 raw` at fire time when the shot's ray has a target |
+| Bullets in flight per target | 1 | 2 |
+| Stage 4 enemy projectile damage | 10 (boss 14) | 17 (boss 23.8), calibrated in §4.5.4 of the experiment log |
+
+Calibration target: the scripted reference policy `heuristic_calibrated` must win at least 70% of Stage 3 and 60% of Stage 4 episodes, while `noop`, `random` and `charge` win none.
 
 ### Reward Shaping v2.1 and Throughput Optimization
 

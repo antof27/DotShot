@@ -11,10 +11,14 @@ from dotshot.envs.multi_agent import DotShotParallelEnv
 class DotShotHARLEnv:
     """Expose DotShotParallelEnv through the vector-env contract used by HARL.
 
-    HARL expects one flat batch dimension per agent, a shared global state for
-    every agent, and per-agent ``MultiDiscrete`` spaces. DotShot already provides
-    all of that; this class only reshapes the PettingZoo dictionaries into lists
-    and adds the truncation flag HARL needs for correct bootstrapping.
+    HARL expects one flat batch dimension per agent, a critic input per agent,
+    and per-agent ``MultiDiscrete`` spaces. This class reshapes the PettingZoo
+    dictionaries into lists, adds the truncation flag HARL needs for correct
+    bootstrapping, and reports a dead agent as done while the episode continues
+    so HARL's ``active_masks`` drop its transitions from the actor loss.
+
+    ``state_type="EP"`` gives every agent the global state; ``"FP"`` gives agent
+    i the agent-specific input ``[global_state, one_hot(i), local_obs_i]``.
     """
 
     def __init__(
@@ -24,6 +28,8 @@ class DotShotHARLEnv:
         reward_alpha: float = 0.5,
         max_steps: Optional[int] = None,
         seed: int = 0,
+        reward_mode: Optional[str] = None,
+        state_type: str = "EP",
     ):
         if stage not in (3, 4):
             raise ValueError(f"DotShotHARLEnv supports stage 3 or 4, got {stage}.")
@@ -33,12 +39,16 @@ class DotShotHARLEnv:
             partial_obs=partial_obs,
             reward_alpha=reward_alpha,
             max_steps=max_steps,
+            reward_mode=reward_mode,
         )
+        self.state_type = state_type
         self.n_agents: int = len(self.env.possible_agents)
         self.observation_space: List[spaces.Box] = [
             self.env.observation_space(agent) for agent in self.env.possible_agents
         ]
         state_dim = int(self.env.state_space().shape[0])
+        if state_type == "FP":
+            state_dim += self.n_agents + int(self.observation_space[0].shape[0])
         share_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(state_dim,), dtype=np.float32
         )
@@ -60,13 +70,17 @@ class DotShotHARLEnv:
             for agent in self.env.possible_agents
         ]
 
-    def _share_obs_list(self) -> List[np.ndarray]:
+    def _share_obs_list(self, obs: List[np.ndarray]) -> List[np.ndarray]:
         state = np.asarray(self.env.state(), dtype=np.float32)
-        return [state.copy() for _ in self.env.possible_agents]
+        if self.state_type != "FP":
+            return [state.copy() for _ in self.env.possible_agents]
+        eye = np.eye(self.n_agents, dtype=np.float32)
+        return [np.concatenate([state, eye[i], obs[i]]) for i in range(self.n_agents)]
 
     def reset(self) -> Tuple[List[np.ndarray], List[np.ndarray], None]:
         obs, _ = self.env.reset()
-        return self._obs_list(obs), self._share_obs_list(), None
+        obs_list = self._obs_list(obs)
+        return obs_list, self._share_obs_list(obs_list), None
 
     def step(
         self, actions: np.ndarray
@@ -88,7 +102,11 @@ class DotShotHARLEnv:
         bad_transition = bool(any(truncations.values()) and not any(terminations.values()))
         dones = np.array(
             [
-                bool(terminations.get(agent, True) or truncations.get(agent, False))
+                bool(
+                    terminations.get(agent, True)
+                    or truncations.get(agent, False)
+                    or not infos.get(agent, {}).get("agent_alive", True)
+                )
                 for agent in agents
             ],
             dtype=bool,
@@ -102,9 +120,10 @@ class DotShotHARLEnv:
         ]
         rewards_list = [[float(rewards.get(agent, 0.0))] for agent in agents]
 
+        obs_list = self._obs_list(obs)
         return (
-            self._obs_list(obs),
-            self._share_obs_list(),
+            obs_list,
+            self._share_obs_list(obs_list),
             rewards_list,
             dones,
             infos_list,
