@@ -139,6 +139,8 @@ $$\mathcal{A}_i = \text{MultiDiscrete}([3, 3, 32, 4])$$
   - `2`: Grass projectile (counters Water)
   - `3`: Fire projectile (counters Grass)
 
+Since v2.2 (ADR-015) one decision is held for `action_repeat = 8` simulator ticks and the rewards of those ticks are summed. Training budgets are reported in ticks (decisions × 8).
+
 ### 3.2 Decentralized Local Observation $o_i^t$
 
 All scalar features are normalized cleanly into $[-1.0, 1.0]$ as `np.float32`. Visibility to hostile entities is gated by distance and segment-AABB Line-of-Sight (LOS) in Stages 3–4 (when partial observability is enabled), ensuring genuine Dec-POMDP partial observability.
@@ -150,17 +152,34 @@ All scalar features are normalized cleanly into $[-1.0, 1.0]$ as `np.float32`. V
 | **Obstacle / Wall LIDAR** | 8 | Normalized distance along 8 cardinal/diagonal rays ($0^\circ, 45^\circ, \dots, 315^\circ$) to nearest wall or cover block | **8** |
 | **Top-$K$ Visible Hostiles** | $K = 5$ | Relative $(\Delta x, \Delta y)$, $(\sin\theta, \cos\theta)$, distance, velocity $(v_x, v_y)$, HP ratio, shield HP ratio, element one-hot (3), boss flag, marked debuff flag, active/LOS flag | $5 \times 15 = \mathbf{75}$ |
 | **Teammates / Neutral Allies** | $M = 3$ | Relative $(\Delta x, \Delta y)$, distance, HP ratio, role/neutral one-hot (4), alive flag | $3 \times 9 = \mathbf{27}$ |
-| **Total $D_{\text{obs}}$** | — | Fixed-dimension schema across Stages 1–4 for direct curriculum transfer | **129** |
+| **Incoming Enemy Projectiles** (v2.2) | $K = 4$ | Relative position, velocity, time to closest approach, miss distance, active flag | $4 \times 7 = \mathbf{28}$ |
+| **Status and Core Threat** (v2.2) | 1 | Shield timer, episode progress, direction to the enemy closest to the Core, flag | **5** |
+| **Crosshair** (v2.2) | 1 | Element one-hot of the visible enemy on the current aim ray, flag | **4** |
+| **Total $D_{\text{obs}}$** | — | Fixed-dimension schema across Stages 1–4 for direct curriculum transfer | **166** |
 
-Keeping $D_{\text{obs}} = 129$ identical across all four stages allows Stage 2 weights to transfer directly into Stage 3/4 actors in Milestone 3 without dimensional mismatch.
+Keeping $D_{\text{obs}} = 166$ identical across all four stages lets a Stage 1 policy initialise Stage 2 and lets a Stage 2 policy act (and be distilled) in Stages 3–4 without dimensional mismatch.
 
 ### 3.3 Privileged Global State $s^t$ (CTDE Only)
 
 Exposed via `env.state()` for `Branching-QMIX`, `MAPPO`, `HAPPO`, `HATRPO`, and `MAT`:
-- Full noise-free agent array ($N_{\max} \times 14$ features: all agents' positions, velocities, HP, cooldowns, roles, alive masks),
+- Full noise-free agent array ($N_{\max} \times 16$ features: all agents' positions, velocities, HP, cooldowns, roles, alive masks, shield and respawn timers),
 - Core state ($5$ features: position, HP, shield/threat density within radius),
 - Full active enemy & boss array ($E_{\max} \times 15$ features regardless of agent LOS occlusion),
+- Up to 16 active enemy projectiles ($16 \times 5$: position, direction, active flag; v2.2),
 - Global wave telemetry ($4$ features: normalized wave index, enemies remaining, active boss count, elapsed episode progress).
+
+Stage 3 has $|s^t| = 241$ and Stage 4 has $|s^t| = 287$. HARL critics use this state with `state_type: EP` and one shared team reward (ADR-013); the `FP` variant feeds agent $i$ the input $[s^t, \text{one\_hot}(i), o_i^t]$.
+
+### 3.4 Official Learner Adapters (`src/benchmarks/official/`)
+
+| Module | Role |
+| :--- | :--- |
+| `harl_dotshot_env.py` | PettingZoo → HARL lists; dead agents reported done for `active_masks` (never all at once mid-episode); EP/FP critic input |
+| `harl_runner.py` | Builds unmodified HARL actors, buffers and critics; patches the MultiDiscrete ratio aggregation (`mean`) and masked entropy; LR decay, minibatches, critic warm-up, BC / distillation warm start |
+| `mat_discrete.py`, `mat_dotshot_env.py`, `mat_runner.py` | Upstream MAT with factored categorical heads `(3, 3, 32, 4)`; truncation bootstrap; same evaluation protocol |
+| `behaviour_cloning.py` | Datasets from the calibrated script or a Stage 2 PPO teacher; cloning into HARL or MAT actors |
+| `bohb_tune.py` | One Optuna study per stage and learner (journal storage under `runs/optuna/`) |
+| `../eval/marl_eval.py` | The single evaluator: exact episode counts on disjoint `val`/`test` seed sets, reward components, behaviour audit |
 
 ---
 
@@ -203,14 +222,14 @@ flowchart LR
 
 ## 5. Experiment Artifact Schema
 
-Every experiment run writes to `runs/<stage>/<algo>/<exp_name>/seed_<k>/`:
+Every experiment run writes to a run directory such as `runs/final/stage3/<config>/seed_<k>/` (`scripts/run_jobs.py`):
 
 ```text
-runs/stage3_coop/mappo/baseline_alpha0.7/seed_0/
+runs/final/stage3/s3_harl_mappo_bc/seed_0/
 |-- config.yaml        # Resolved config + git_sha + GPU/CPU versions + seed
-|-- metrics.jsonl      # Step-aligned episodic returns, win rate, Core HP, accuracy, FPS
+|-- metrics.jsonl      # train/* losses, eval/* val curves, test/* final held-out scores, behaviour audit
 |-- tb/                # TensorBoard event files
 |-- checkpoints/
-    |-- best.pt        # Highest evaluation IQM / Win Rate checkpoint
-    |-- final.pt       # Final step checkpoint
+    |-- best/          # Highest val-return checkpoint
+    |-- final/         # Final checkpoint; reported test scores always come from this one
 ```

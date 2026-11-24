@@ -95,6 +95,7 @@ Each episode's `info["reward_components"]` holds every named term's contribution
 | Aim shaping | Every tick, toward the current position of the nearest visible enemy | Only on ticks where a shot is fired, toward the lead point of the priority threat |
 | Element choice | Rewarded only on impact | Also `+1.5 raw` (counter element) or `−0.75 raw` (wrong element) at fire time when the shot's ray has a target; zero-mean for a random weapon |
 | Bullets in flight per target | 1 | 2 |
+| Decision interval (all stages) | 1 tick | 8 ticks: an action is held for 8 ticks and the rewards are summed (ADR-015) |
 | Stage 4 enemy projectile damage | 10 (boss 14) | 17 (boss 23.8), calibrated in §4.5.4 of the experiment log |
 
 Calibration target: the scripted reference policy `heuristic_calibrated` must win at least 70% of Stage 3 and 60% of Stage 4 episodes, while `noop`, `random` and `charge` win none.
