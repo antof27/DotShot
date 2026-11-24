@@ -12,6 +12,7 @@ This roadmap tracks progress across all four coupled pillars of **DotShot Game v
 | **M1** | Windows CUDA `.venv` + DotShot v2 + MARL Engine + SOTA Handbook + Initial Benchmarks + Notelia Skill | Stages 1–4 + Renderer + Tests | SB3 SA + Modular MARL Suite + `rliable` Eval + Stage 1–3 M1 Runs | Chapters 1–4 + `references.bib` + Validator + M1 Results | Portable EN skill + tests merged to local `dev` | **Complete** |
 | **M2** | Full 5-Seed MARL Sweeps & Credit-Assignment Ablations | Reward v2.1 + pre-cached LOS + `DummyMARLEnv` verified | Converged Stage 1–2 + 5-seed Stage 3 & Stage 4 sweeps + $\alpha$/LOS ablations | Complete Milestone 2 results, 300 DPI figures & Stage 4 MP4 in Ch. 3–4 | Doc validator gate passing (`0` errors) | **Complete** |
 | **M3** | Official SOTA Integration, Optuna BOHB, 1M-Step Sweeps & PDF Release | `enjoy.py` official MAT/HARL replay + Stage 4 MP4 | Pinned HARL & MAT submodules + BOHB + 1M x 3-seed sweeps | Ch. 4 M3 tables, BOHB figure, 4 converged figures, 2 MP4 replays | MiKTeX PDF (25 pages) + validator 0 errors | **Complete** |
+| **M3-fix** | Root-cause fixes for MARL performance (`fix/marl-performance`) | DotShot v2.2 (respawn, terminal victory, projectile/crosshair obs, fire-tick shaping, calibrated difficulty) | Baselines, corrected HARL/MAT adapters, shared evaluator, BC warm start, per-stage Optuna | Experiment log §4.5, ADR-013/014 | Report rewrite pending | **In progress** |
 
 ---
 
@@ -52,3 +53,11 @@ This roadmap tracks progress across all four coupled pillars of **DotShot Game v
 - [x] Chapter 4 M3 section, README highlights, BOHB figure, four converged figures, and two MP4 replays published.
 - [x] MiKTeX report compiled to `docs/paper/dotshot_marl_report.pdf` and linked from `README.md`.
 - [x] `scripts/validate_docs.py` passes with 0 broken links, 0 prose violations, and 0 undefined citations.
+
+### Milestone 3 Performance Fix (In Progress, branch `fix/marl-performance`)
+
+**Status, 2026-11-24 (Phase 0–2 code complete, Phase 1 gate failed twice; stopped for a decision):**
+- Passed: Phase 0 baselines on v2.1 reproduce the suicide trap (`charge` beats every Milestone 3 learner). The Phase 1 fixes are each pinned by a unit test (`tests/test_marl_fixes.py`). DotShot v2.2 calibration meets its targets on the `test` split: the reference script wins 71.9% (Stage 3) and 68.8% (Stage 4), while `noop`, `random` and `charge` win 0%.
+- Failed: Phase 1 gate attempt 1 (v2.1 dynamics) with 0.78 kills per episode, and attempt 2 (v2.2) with 1.84 kills per episode, against a target of 3. Both attempts beat `noop` and `charge` beyond the 95% CI and outlast `charge`. Experiment log §4.5.3–4.5.7.
+- Not started: Phase 3 tuning (estimated about 128 core-hours, roughly 21–30 h on 6 workers), final runs, and the report rewrite.
+- Running: nothing.

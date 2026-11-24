@@ -1,0 +1,22 @@
+# Phase 2 diagnostic: Stage 2 PPO on DotShot v2.2 with standard PPO settings.
+stage: 2
+algo: ppo
+exp_name: stage2_ppo_v22_std
+total_steps: 1000000
+num_envs: 8
+vec_env: dummy
+n_steps: 512
+batch_size: 256
+n_epochs: 10
+lr: 0.0003
+gamma: 0.99
+gae_lambda: 0.95
+clip_range: 0.2
+ent_coef: 0.01
+vf_coef: 0.5
+max_grad_norm: 0.5
+cosine_lr: true
+eval_freq: 100000
+n_eval_episodes: 16
+n_test_episodes: 32
+net_arch: [128, 128]

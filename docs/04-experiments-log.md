@@ -324,7 +324,7 @@ Configuration `configs/phase1/stage3_harl_mappo_gate.yaml`: HARL-MAPPO with the 
 
 Gate checks (`runs/phase1/gate1_report.json`): beats `noop` beyond the CI: yes. Beats `charge` beyond the CI: yes. Episode length above `charge`: yes. Kills ≥ 3: **no (0.78)**. The gate fails.
 
-Diagnosis from the seed-0 validation reward breakdown at 1.23M steps: Core damage (−4.00) and Core destruction (−1.20) dominate the return. The per-tick aim shaping pays +1.28 per episode, about 3.6 times the correct-hit reward (+0.35), for pointing at the *current* position of the nearest enemy whether or not the agent fires. Elemental accuracy stays at chance. The summed policy entropy is 6.1–6.2 out of a maximum of 7.05 (ln 3 + ln 3 + ln 32 + ln 4), so the aim and weapon heads remain close to uniform. These symptoms match findings N and O, which DotShot v2.2 addresses, rather than an optimisation fault. The retry therefore runs on v2.2 (§4.5.5).
+Diagnosis from the seed-0 validation reward breakdown at 1.23M steps: Core damage (−4.00) and Core destruction (−1.20) dominate the return. The per-tick aim shaping pays +1.28 per episode, about 3.6 times the correct-hit reward (+0.35), for pointing at the *current* position of the nearest enemy whether or not the agent fires. Elemental accuracy stays at chance. The summed policy entropy is 6.1–6.2 out of a maximum of 7.05 (ln 3 + ln 3 + ln 32 + ln 4), so the aim and weapon heads remain close to uniform. These symptoms match findings N and O, which DotShot v2.2 addresses, rather than an optimisation fault. The retry therefore runs on v2.2 (§4.5.7).
 
 ### 4.5.4 Phase 2: DotShot v2.2 Calibration
 
@@ -356,17 +356,48 @@ A first choice of 18.5 (71.9% on 32 `val` episodes) won only 53.1% of the 32 `te
 
 | Stage | Policy | Return [95% CI] | Win (%) | Kills / ep | Core HP (%) | Ep. length |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: |
-| 3 | random | −6.79 [−7.13, −6.46] | 0.0 | 0.0 | 0.0 | 494 |
+| 3 | random | −6.62 [−6.96, −6.30] | 0.0 | 0.0 | 0.0 | 494 |
 | 3 | noop | −7.19 [−7.42, −6.96] | 0.0 | 0.0 | 0.0 | 483 |
 | 3 | charge | −10.32 [−10.70, −9.92] | 0.0 | 0.0 | 0.0 | 474 |
-| 3 | heuristic_nearest | 77.24 [72.57, 81.56] | 65.6 | 40.4 | 15.9 | 1870 |
-| 3 | heuristic_core_guard | 64.13 [58.07, 69.35] | 78.1 | 34.2 | 35.6 | 1853 |
-| 3 | heuristic_calibrated | 85.84 [82.59, 89.00] | 71.9 | 41.5 | 20.2 | 1960 |
-| 4 | random | −7.86 [−8.25, −7.49] | 0.0 | 0.4 | 0.0 | 541 |
+| 3 | heuristic_nearest | 87.77 [82.58, 92.59] | 65.6 | 40.4 | 15.9 | 1870 |
+| 3 | heuristic_core_guard | 72.83 [66.09, 78.59] | 78.1 | 34.2 | 35.6 | 1853 |
+| 3 | heuristic_calibrated | 96.83 [93.41, 100.17] | 71.9 | 41.5 | 20.2 | 1960 |
+| 4 | random | −7.70 [−8.11, −7.31] | 0.0 | 0.4 | 0.0 | 541 |
 | 4 | noop | −9.02 [−9.21, −8.85] | 0.0 | 0.0 | 0.0 | 542 |
 | 4 | charge | −11.58 [−11.93, −11.22] | 0.0 | 0.0 | 0.0 | 509 |
-| 4 | heuristic_nearest | 59.38 [54.43, 64.30] | 6.2 | 38.4 | 2.3 | 1526 |
-| 4 | heuristic_core_guard | 51.01 [43.81, 58.18] | 15.6 | 34.4 | 4.7 | 1526 |
-| 4 | heuristic_calibrated | 97.63 [93.11, 101.54] | 68.8 | 55.7 | 27.9 | 2100 |
+| 4 | heuristic_nearest | 66.92 [61.38, 72.36] | 6.2 | 38.4 | 2.3 | 1526 |
+| 4 | heuristic_core_guard | 57.30 [49.39, 65.17] | 15.6 | 34.4 | 4.7 | 1526 |
+| 4 | heuristic_calibrated | 108.03 [103.18, 112.22] | 68.8 | 55.7 | 27.9 | 2100 |
 
 Both calibration targets hold on the held-out seeds: 71.9% (Stage 3, ≥ 70%) and 68.8% (Stage 4, ≥ 60%). On Stage 3, `heuristic_core_guard` wins more episodes (78.1%) than the calibrated script but scores a lower return because it kills less.
+
+### 4.5.6 Diagnostics Between Gate Attempts (single seed, 1M steps)
+
+Each row is one seed (seed 0) scored on 32 `test` episodes. The environment changed between groups. Build a is the first v2.2 build. It had a symmetric `±0.6` fire-time credit, and its HARL adapter ended the episode whenever every agent was dead at once, which restored the suicide trap inside HARL training. Build b fixes both, adds the crosshair observation, and uses a `+0.6 / −0.3` credit. Build c raises the credit to `+1.5 / −0.75`.
+
+| Build | Learner and change | Return | Kills / ep | Elem. acc. (%) | Win (%) |
+| :---: | :--- | :---: | :---: | :---: | :---: |
+| a | HARL-MAPPO, gate config | −4.23 | 0.2 | 32 | 0 |
+| a | HARL-MAPPO, `entropy_coef` 0.0025 | −3.80 | 0.5 | 41 | 0 |
+| b | HARL-MAPPO, gate config | −3.35 | 0.5 | 28 | 0 |
+| b | HARL-MAPPO, 16 actor / 8 critic minibatches, 10 epochs | −4.80 | 0.2 | 34 | 0 |
+| b | same, `entropy_coef` 0.003 | −4.33 | 0.1 | 37 | 0 |
+| b | SB3 PPO Stage 1, Milestone 3 hyperparameters | 21.41 | 12.4 | 100 | 71.9 |
+| b | SB3 PPO Stage 2, Milestone 3 hyperparameters | 2.62 | 1.6 | 31.9 | 71.9 |
+| b | SB3 PPO Stage 2, standard PPO (lr 3e-4, 10 epochs, `ent_coef` 0.01) | 3.95 | 1.8 | 47.6 | 71.9 |
+| c | SB3 PPO Stage 2, standard PPO | 6.19 | 3.6 | 62.3 | 6.2 |
+
+Behaviour probes explain the three environment changes. In build a, the HARL policy (6 `val` episodes) held fire on 40% of its actions and hit with the wrong element three times as often as with the right one (39 vs 13 hits). In build b, the Stage 2 PPO policy fired Water on 74% of steps whatever the crosshair showed, which is right only against Fire enemies. In build c, its choice depends on the target: against Water it picks Grass 62% of the time, against Fire it picks Water 61%, but against Grass it still picks Fire only 11% of the time. More gradient steps per sample did not help HARL-MAPPO, so the slow learning comes from the element-choice credit assignment, not from the optimiser budget.
+
+### 4.5.7 Phase 1 Gate, Attempt 2 (FAILED on kills)
+
+Configuration `configs/phase1/stage3_harl_mappo_gate2.yaml`, the attempt 1 learner unchanged, final DotShot v2.2 (build c), 2,000,000 steps, seeds 0–4, 38 min per seed. Baselines: §4.5.5. Report: `docs/results/fix/phase1_gate_attempt2.json`.
+
+| Policy | n | Return mean [95% CI] | Kills / ep | Ep. length | Elem. acc. (%) | Win (%) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| HARL-MAPPO (fixed) | 5 seeds | −1.64 [−1.98, −1.23] | 1.84 | 571 | 39–57 (per seed) | 0.0 |
+| noop | 32 episodes | −7.19 [−7.42, −6.96] | 0.0 | 483 | – | 0.0 |
+| charge | 32 episodes | −10.32 [−10.70, −9.92] | 0.0 | 474 | – | 0.0 |
+| heuristic_calibrated | 32 episodes | 96.83 [93.41, 100.17] | 41.5 | 1960 | – | 71.9 |
+
+Gate checks: beats `noop` and `charge` beyond the CI, episode length above `charge`, but **kills 1.84 < 3**. The gate fails a second time. Validation kills rise on every seed from 0.0–0.2 at step 0 to 1.1–1.8 at 2M; they flatten over the last 0.4M steps while the linearly decaying learning rate approaches zero. The final policies still let the Core fall in every episode (Core damage −4.00 and Core destruction −1.20 on seed 4, against +0.91 for correct hits and +0.48 for kills), and the summed policy entropy stays at 6.1–6.2 of 7.05. Per `PROMPT_pc_full_run.md` §7 the run stops here for a decision on how to proceed.

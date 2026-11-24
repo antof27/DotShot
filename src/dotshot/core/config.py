@@ -135,7 +135,7 @@ class StageConfig:
     agent_contact_mult: float = 0.04  # contact damage per tick = enemy.contact_damage_rate * mult
     core_contact_mult: float = 0.045
     max_bullets_per_target: int = 2  # own bullets in flight toward one enemy
-    fire_element_credit: float = 0.6  # raw +/- reward at fire time for the counter / a wrong element
+    fire_element_credit: float = 1.5  # raw reward at fire time: +c for the counter element, -c/2 for a wrong one
     aim_shaping_anneal_steps: int = 0  # >0: aim shaping decays linearly to 0 over this many env steps
     obstacles: Tuple[RectObstacle, ...] = field(default_factory=tuple)
 

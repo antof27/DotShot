@@ -100,17 +100,18 @@ class DotShotHARLEnv:
         obs, rewards, terminations, truncations, infos = self.env.step(action_dict)
 
         bad_transition = bool(any(truncations.values()) and not any(terminations.values()))
-        dones = np.array(
-            [
-                bool(
-                    terminations.get(agent, True)
-                    or truncations.get(agent, False)
-                    or not infos.get(agent, {}).get("agent_alive", True)
-                )
-                for agent in agents
-            ],
-            dtype=bool,
-        )
+        episode_over = bool(any(terminations.values()) or any(truncations.values()))
+        dead = np.array([not infos.get(agent, {}).get("agent_alive", True) for agent in agents], dtype=bool)
+        # HARL ends an episode wherever every agent is done, so a full wipe while the
+        # episode goes on (v2.2 respawn) must not report all agents as done.
+        # shortcut: during a full wipe the dead agents' zero observations stay in the
+        # actor loss; masking them needs a patched HARL insert().
+        if episode_over:
+            dones = np.ones(len(agents), dtype=bool)
+        elif dead.all():
+            dones = np.zeros(len(agents), dtype=bool)
+        else:
+            dones = dead
         infos_list = [
             {
                 "bad_transition": bad_transition,

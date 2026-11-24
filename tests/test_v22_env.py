@@ -99,3 +99,22 @@ def test_reward_ordering_charge_below_losing_fight_below_win():
     assert lose["eval/win_rate"] == 0.0 and lose["eval/kills_mean"] > 0.0
     assert any(ep["win"] == 1.0 for ep in eps)
     assert charge["eval/return_mean"] < lose["eval/return_mean"] < win["eval/return_mean"]
+
+
+def test_fire_element_credit_is_zero_mean_for_random_weapon():
+    """One right and two wrong elements must cancel, so the credit never discourages firing."""
+    credits = [
+        _fire_at(_quiet_engine(), ELEMENT_FIRE, w)["fire_element_credit"] for w in range(3)
+    ]
+    assert sum(credits) == pytest.approx(0.0)
+
+
+def test_crosshair_reports_element_under_aim():
+    e = _quiet_engine()
+    a = e.agents[0]
+    e.enemies = [Enemy(uid=7, x=a.x + 150.0, y=a.y, enemy_type=ELEMENT_WATER)]
+    a.aim_dx, a.aim_dy = 1.0, 0.0
+    block = e.get_local_obs(0)[-4:]
+    assert block[ELEMENT_WATER] == 1.0 and block[3] == 1.0 and block.sum() == 2.0
+    a.aim_dx, a.aim_dy = -1.0, 0.0  # aiming away
+    assert e.get_local_obs(0)[-4:].sum() == 0.0

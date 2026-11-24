@@ -209,3 +209,17 @@ def test_behaviour_cloning_warm_start_lowers_nll(tmp_path, monkeypatch):
     first = bc.bc_mat(policy, data, epochs=1, batch_size=256)["bc/nll"]
     last = bc.bc_mat(policy, data, epochs=4, batch_size=256)["bc/nll"]
     assert last < first
+
+
+def test_full_wipe_with_respawn_does_not_end_harl_episode():
+    """v2.2 respawn: all agents dead at once is not an episode end for HARL's vec env."""
+    envs = ShareDummyVecEnv([lambda r=r: DotShotHARLEnv(stage=3, seed=r) for r in range(2)])
+    envs.reset()
+    engine = envs.envs[0].env.engine
+    for agent in engine.agents:
+        agent.hp, agent.alive, agent.respawn_timer = 0.0, False, 50
+    step_before = engine.step_count
+    _, _, _, dones, _, _ = envs.step(np.ones((2, engine.cfg.num_agents, 4), dtype=np.int64))
+    assert not dones[0].any()
+    assert engine.step_count == step_before + 1  # not reset
+    envs.close()

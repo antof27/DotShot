@@ -43,8 +43,8 @@ PROJ_FEATS = 7
 MAX_STATE_PROJECTILES = 16  # v2.2: enemy projectiles in the global state
 AGENT_STATE_FEATS = 16
 # 14 self + 5 core + 8 lidar + 5x15 hostiles + 3x9 teammates = 129 (v2.1)
-# + 4x7 projectiles + shield timer + time progress + 3 core-threat = 162 (v2.2)
-OBS_DIM = 129 + TOP_K_PROJECTILES * PROJ_FEATS + 5
+# + 4x7 projectiles + shield timer + time progress + 3 core-threat + 4 crosshair = 166 (v2.2)
+OBS_DIM = 129 + TOP_K_PROJECTILES * PROJ_FEATS + 5 + 4
 CORE_THREAT_RADIUS = 300.0
 
 
@@ -361,7 +361,9 @@ class DotShotEngine:
                         if target_uid is not None and self.cfg.fire_element_credit:
                             target = next(e for e in self.enemies if e.uid == target_uid)
                             right = ELEMENT_COUNTERS[weapon_type] == target.enemy_type
-                            ev.fire_element_credit += self.cfg.fire_element_credit * (1.0 if right else -1.0)
+                            # +c / -c/2: a uniformly random weapon earns zero expected credit,
+                            # so the term teaches element choice without discouraging fire.
+                            ev.fire_element_credit += self.cfg.fire_element_credit * (1.0 if right else -0.5)
                         well_aimed = best_dot >= 0.88
                         bx = agent.x + aim_dx * (agent.radius + 6.0)
                         by = agent.y + aim_dy * (agent.radius + 6.0)
@@ -879,6 +881,14 @@ class DotShotEngine:
             else:
                 obs[ptr + 4] = -1.0
         ptr += 5
+
+        # 8. v2.2: crosshair, the element of the enemy on the current aim ray (last action's aim)
+        uid = self._find_ray_target_uid(agent, agent.aim_dx, agent.aim_dy)
+        target = next((e for e in self.enemies if e.uid == uid), None) if uid is not None else None
+        if target is not None and self._is_enemy_visible(agent, target):
+            obs[ptr + target.enemy_type] = 1.0
+            obs[ptr + 3] = 1.0
+        ptr += 4
 
         return np.clip(obs, -1.0, 1.0)
 

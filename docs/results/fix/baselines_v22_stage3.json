@@ -14,7 +14,7 @@
     "seed": 0
   },
   "git": {
-    "git_sha": "b7a3635afa633b80208dec3ed577d3b81a3ac05c",
+    "git_sha": "32f0cacb88691889567e737913cc771adc23485c",
     "git_branch": "fix/marl-performance",
     "git_dirty": true
   },
@@ -22,8 +22,8 @@
     "random": {
       "metrics": {
         "eval/n_episodes": 32.0,
-        "eval/return_mean": -6.793393284848577,
-        "eval/return_std": 0.9967205548607616,
+        "eval/return_mean": -6.624174534848576,
+        "eval/return_std": 0.989951394649463,
         "eval/win_rate": 0.0,
         "eval/core_hp_ratio": 0.0,
         "eval/elemental_accuracy": 0.37713857323232325,
@@ -39,7 +39,7 @@
         "eval/rc_combo_kills": 0.0,
         "eval/rc_damage_taken": -1.9014375000000017,
         "eval/rc_death": -0.4296875,
-        "eval/rc_fire_element_credit": -0.10125,
+        "eval/rc_fire_element_credit": 0.06796875000000002,
         "eval/rc_heal_utility": 0.0,
         "eval/rc_hits_correct": 0.29218750000000004,
         "eval/rc_hits_wrong": -0.045625,
@@ -66,14 +66,14 @@
       },
       "return_stats": {
         "n": 32,
-        "mean": -6.793393284848577,
-        "std": 0.9967205548607616,
-        "median": -6.6789284905217485,
-        "iqm": -6.72943463693613,
-        "mean_ci_low": -7.1339813042531315,
-        "mean_ci_high": -6.464583064317002,
-        "ci_low": -7.087062857392399,
-        "ci_high": -6.401901957789147,
+        "mean": -6.624174534848576,
+        "std": 0.989951394649463,
+        "median": -6.43445643718769,
+        "iqm": -6.5442027386409345,
+        "mean_ci_low": -6.964409338521659,
+        "mean_ci_high": -6.303958003227034,
+        "ci_low": -6.926075818032361,
+        "ci_high": -6.234654884412327,
         "ci_of": "iqm"
       },
       "win_stats": {
@@ -232,8 +232,8 @@
     "heuristic_nearest": {
       "metrics": {
         "eval/n_episodes": 32.0,
-        "eval/return_mean": 77.23964179482529,
-        "eval/return_std": 13.161815606542406,
+        "eval/return_mean": 87.7712824198255,
+        "eval/return_std": 14.641847167474344,
         "eval/win_rate": 0.65625,
         "eval/core_hp_ratio": 0.1593352499999998,
         "eval/elemental_accuracy": 0.9547346107900395,
@@ -249,7 +249,7 @@
         "eval/rc_combo_kills": 6.7578125,
         "eval/rc_damage_taken": -1.9550000000000005,
         "eval/rc_death": -0.296875,
-        "eval/rc_fire_element_credit": 6.965625000000008,
+        "eval/rc_fire_element_credit": 17.497265624999937,
         "eval/rc_heal_utility": 0.0,
         "eval/rc_hits_correct": 17.672187499999964,
         "eval/rc_hits_wrong": -0.0753125,
@@ -276,14 +276,14 @@
       },
       "return_stats": {
         "n": 32,
-        "mean": 77.23964179482529,
-        "std": 13.161815606542406,
-        "median": 81.77674330354502,
-        "iqm": 81.26089416666119,
-        "mean_ci_low": 72.5675217568051,
-        "mean_ci_high": 81.56134246031758,
-        "ci_low": 75.424336060666,
-        "ci_high": 83.82469253262981,
+        "mean": 87.7712824198255,
+        "std": 14.641847167474344,
+        "median": 93.14332215839278,
+        "iqm": 92.24285744662126,
+        "mean_ci_low": 82.58457449118032,
+        "mean_ci_high": 92.59069795647287,
+        "ci_low": 85.78099928740644,
+        "ci_high": 95.02562109506519,
         "ci_of": "iqm"
       },
       "win_stats": {
@@ -302,8 +302,8 @@
     "heuristic_core_guard": {
       "metrics": {
         "eval/n_episodes": 32.0,
-        "eval/return_mean": 64.12528559667996,
-        "eval/return_std": 16.27823495608134,
+        "eval/return_mean": 72.83044184668012,
+        "eval/return_std": 18.070893604482848,
         "eval/win_rate": 0.78125,
         "eval/core_hp_ratio": 0.35605993749999987,
         "eval/elemental_accuracy": 0.9482345244427326,
@@ -319,7 +319,7 @@
         "eval/rc_combo_kills": 5.421875,
         "eval/rc_damage_taken": -3.1455625000000014,
         "eval/rc_death": -0.6328125,
-        "eval/rc_fire_element_credit": 5.715937500000003,
+        "eval/rc_fire_element_credit": 14.421093749999956,
         "eval/rc_heal_utility": 0.0,
         "eval/rc_hits_correct": 14.946249999999974,
         "eval/rc_hits_wrong": -0.06937499999999999,
@@ -346,14 +346,14 @@
       },
       "return_stats": {
         "n": 32,
-        "mean": 64.12528559667996,
-        "std": 16.27823495608134,
-        "median": 67.26845231668061,
-        "iqm": 68.10249715053503,
-        "mean_ci_low": 58.074484568851524,
-        "mean_ci_high": 69.34858186661167,
-        "ci_low": 61.306977610884694,
-        "ci_high": 72.92020360284755,
+        "mean": 72.83044184668012,
+        "std": 18.070893604482848,
+        "median": 76.96595231668047,
+        "iqm": 77.45265340053524,
+        "mean_ci_low": 66.08871314255458,
+        "mean_ci_high": 78.58656447194616,
+        "ci_low": 69.85073588042023,
+        "ci_high": 82.64454054913789,
         "ci_of": "iqm"
       },
       "win_stats": {
@@ -372,8 +372,8 @@
     "heuristic_calibrated": {
       "metrics": {
         "eval/n_episodes": 32.0,
-        "eval/return_mean": 85.83878589591933,
-        "eval/return_std": 9.300823956369106,
+        "eval/return_mean": 96.82558277091952,
+        "eval/return_std": 9.933050415800727,
         "eval/win_rate": 0.71875,
         "eval/core_hp_ratio": 0.2021615625,
         "eval/elemental_accuracy": 0.9595776347986948,
@@ -389,7 +389,7 @@
         "eval/rc_combo_kills": 7.515625,
         "eval/rc_damage_taken": -0.08584999999999993,
         "eval/rc_death": 0.0,
-        "eval/rc_fire_element_credit": 7.272187500000012,
+        "eval/rc_fire_element_credit": 18.258984374999923,
         "eval/rc_heal_utility": 0.0,
         "eval/rc_hits_correct": 18.194687499999965,
         "eval/rc_hits_wrong": -0.07125,
@@ -416,14 +416,14 @@
       },
       "return_stats": {
         "n": 32,
-        "mean": 85.83878589591933,
-        "std": 9.300823956369106,
-        "median": 86.4387345702727,
-        "iqm": 86.97175451622239,
-        "mean_ci_low": 82.58963072967069,
-        "mean_ci_high": 89.00363305840933,
-        "ci_low": 83.67015395134835,
-        "ci_high": 90.1008408504812,
+        "mean": 96.82558277091952,
+        "std": 9.933050415800727,
+        "median": 97.77635585500298,
+        "iqm": 98.18918940709875,
+        "mean_ci_low": 93.41296409281274,
+        "mean_ci_high": 100.17248022499766,
+        "ci_low": 94.5044378036202,
+        "ci_high": 101.50983159849338,
         "ci_of": "iqm"
       },
       "win_stats": {
