@@ -427,7 +427,7 @@ HARL-MAPPO on Stage 3, seed 0, gate hyperparameters unless noted, 32 `test` epis
 | Variant | Ticks | Return | Win (%) | Kills / ep | Elem. acc. (%) | Core HP (%) | Move | Notes |
 | :--- | ---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
 | Scratch MLP 128 (gate config) | 6M | 0.85 | 0 | 2.2 | 60.8 | 0 | 0.86 | §4.5.8 |
-| Scratch MLP 128, schedule for 24M ticks | 6.1M (`val`) | 4.85 | 0 | 4.1 | 65.5 | 0 | 0.94 | slower LR decay; still running |
+| **Scratch MLP 128, 24M-tick schedule** | 24M | **53.05** | **25.0** | 24.6 | 90.1 | 5.1 | 0.93 | `val` return 3.3 at 6M, 29.7 at 12M, 48.5 at 20M, 63.1 at 24M |
 | Scratch GRU 128 | 6M | 5.23 | 0 | 4.3 | 61.5 | 0 | 0.93 | |
 | Scratch MLP 128 + guard potential (`c = 10`) | 6M | 2.29 | 0 | 2.9 | 58.3 | 0 | 0.89 | potential-based, ADR-015 |
 | Scratch MLP 128, 16 minibatches × 10 epochs, lr 3e-4 | 3.7M (`val`) | −1.00 | 0 | 1.4 | 53.2 | 0 | 0.93 | stopped: worse |
@@ -440,7 +440,7 @@ HARL-MAPPO on Stage 3, seed 0, gate hyperparameters unless noted, 32 `test` epis
 Findings:
 - The behaviour audit caught the first warm start. Cloned from too little data, the deterministic movement heads always chose "stay", so the policy never moved (`move_frac` 0.00, 2.1 deaths per episode). With 200 episodes and 30 epochs, held-out branch accuracy reaches 83% (moves), 82% (aim) and 96% (weapon), and the clone plays the game by itself.
 - RL fine-tuning after a critic-only warm-up improves on the clone instead of erasing it (return 52.8 → 68.7, win 37.5% → 50%). A single seed reaches 78% of the reference script's return with a 50% win rate, which already meets the Stage 3 acceptance bar (≥ 50% of the script's return and > 20% wins).
-- From scratch, a longer learning-rate schedule and a recurrent actor both help. No scratch run defends the Core yet: their mean distance to the Core is about 400 px, against 157 px for the cloned policy.
+- From scratch, learning is slow but steady and does not plateau within 24M ticks. With a learning-rate schedule sized for 24M ticks, the scratch MLP learns to defend the Core: 53.05 `test` return (61% of the reference script), 25% wins, 24.6 kills and 90% elemental accuracy, with a normal behaviour audit (13% hold fire, 93% moving, 0.4 deaths per episode). Shorter scratch runs (6M ticks) never get that far. Final scratch runs therefore need budgets of the order of 16–24M ticks, while warm-started runs converge within a few million.
 
 Stage 2 PPO, seed 0, standard PPO settings, `val` evaluations at 1.2M ticks: from scratch the policy reaches 58.2% elemental accuracy and 2.8 kills. Started from the Stage 1 policy with its weapon head reset to uniform (`reset_weapon_head`), it reaches **83.1%** and 9.2 kills. The Stage 1 → 2 curriculum transfer is what unlocks the element-choice target.
 
