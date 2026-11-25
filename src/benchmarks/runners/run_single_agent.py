@@ -264,6 +264,10 @@ def run_experiment(
                     device=device,
                     custom_objects={"learning_rate": lr_schedule},
                 )
+                # PPO.load reseeds torch and the envs with the checkpoint's own seed, which
+                # made every transfer run from one checkpoint an exact copy. Reseed with ours.
+                model.seed = seed
+                model.set_random_seed(seed)
                 model.learning_rate = lr_schedule
                 model.lr_schedule = lr_schedule if callable(lr_schedule) else (lambda _: lr)
                 model.ent_coef = float(cfg.get("ent_coef", model.ent_coef))

@@ -457,3 +457,8 @@ Run order (parallel lanes via `scripts/optuna_lane.sh`; each Stage 4 study start
 4. `s3_harl_hatrpo` → `s4_harl_hatrpo`
 5. `s3_mat` (CUDA) → `s4_mat` (CUDA)
 6. `s3_harl_haa2c` → `s4_mat` (second worker), started when the long scratch probe of §4.5.9 finishes
+
+Progress notes (2026-11-25, 07:00, about 15 h in):
+- Tuning is slower than estimated: HyperBand prunes fewer trials than assumed, so the projection is about 45 h, still under the 72 h limit. No trial has crashed, and the GPU stays below 40 °C.
+- Every Stage 3 study has a BC-warm-started trial between 78 and 86 val return (calibrated script: 87.6 on `test`). The behaviour audit shows no degenerate policy in those trials. Move fraction is 0.2–0.6, fire rate 7.6–8.0 shots per 100 ticks, elemental accuracy ≥ 89 %, and deaths ≤ 0.6 per episode. Scratch trials stay near zero at 4M ticks (best −1.8 for MAPPO), as §4.5.9 predicted, so scratch hyperparameters are chosen on a weak signal.
+- Bug found in Stage 2 transfer: `PPO.load` reseeds torch and the environments with the seed stored in the Stage 1 checkpoint. Both seeds of a transfer trial therefore produced the same run to the last digit; trial 5 scored 44.67 on both. The runner now reseeds after loading, and `tests/test_transfer_seed.py` covers it. The running `s2_sb3_ppo` study keeps the old code because the module is already imported, so its transfer trials are effectively single-seed. The final 5-seed runs use the fixed code.
