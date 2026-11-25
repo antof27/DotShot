@@ -1,0 +1,12 @@
+{
+  "description": "Decision-interval A/B on DotShot v2.2, seed 0 unless noted, 32 test episodes per run (experiment log 4.4.4).",
+  "rows": [
+    {"learner": "SB3 PPO, Stage 1", "k": 1, "ticks": 1000000, "win_rate": 0.719, "return": 21.41, "elemental_accuracy": 1.0},
+    {"learner": "SB3 PPO, Stage 1", "k": 8, "ticks": 2000000, "win_rate": 1.0, "return": 31.93, "elemental_accuracy": 1.0},
+    {"learner": "SB3 PPO, Stage 2", "k": 1, "ticks": 1000000, "win_rate": 0.062, "return": 6.19, "elemental_accuracy": 0.623, "wall_s": 892},
+    {"learner": "SB3 PPO, Stage 2", "k": 4, "ticks": 2000000, "win_rate": 0.625, "return": 11.28, "elemental_accuracy": 0.682, "wall_s": 767},
+    {"learner": "SB3 PPO, Stage 2", "k": 8, "ticks": 2000000, "win_rate": 0.969, "return": 11.56, "elemental_accuracy": 0.616, "wall_s": 586},
+    {"learner": "HARL-MAPPO, Stage 3", "k": 1, "ticks": 2000000, "win_rate": 0.0, "return": -1.64, "wall_s": 2222, "note": "5 seeds"},
+    {"learner": "HARL-MAPPO, Stage 3", "k": 8, "ticks": 2000000, "win_rate": 0.0, "return": -2.06, "wall_s": 749}
+  ]
+}
