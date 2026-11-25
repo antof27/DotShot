@@ -170,7 +170,59 @@ def fig_tuning() -> None:
         _save(fig, "tuning_importances")
 
 
-FIGURES = {"learnability": fig_learnability, "action_repeat": fig_action_repeat, "tuning": fig_tuning}
+# --------------------------------------------------------------------------- final runs
+
+
+def _band(run_dirs, key="eval/return_mean", repeat=8, scale=1.0):
+    """Mean and 95% bootstrap band over seeds, at the evaluation steps every seed reached."""
+    curves = [dict((r["step"], r[key]) for r in _rows(d / "metrics.jsonl") if key in r) for d in run_dirs]
+    steps = sorted(set.intersection(*(set(c) for c in curves))) if curves else []
+    rng = np.random.default_rng(0)
+    xs, mean, lo, hi = [], [], [], []
+    for s in steps:
+        v = np.array([c[s] for c in curves]) * scale
+        boots = rng.choice(v, size=(1000, len(v))).mean(1)
+        xs.append(s * repeat / 1e6)
+        mean.append(v.mean())
+        lo.append(np.percentile(boots, 2.5))
+        hi.append(np.percentile(boots, 97.5))
+    return np.array(xs), np.array(mean), np.array(lo), np.array(hi)
+
+
+def _seeds(cfg_dir: pathlib.Path):
+    return sorted(d for d in cfg_dir.glob("seed_*") if (d / "metrics.jsonl").exists()
+                  and "test/return_mean" in (d / "metrics.jsonl").read_text(encoding="utf-8"))
+
+
+def fig_final_single() -> None:
+    s1 = _seeds(RUNS / "final/stage1/s1_sb3_ppo_scratch")
+    s2 = {"scratch": _seeds(RUNS / "final/stage2/s2_sb3_ppo_scratch"),
+          "transfer": _seeds(RUNS / "final/stage2/s2_sb3_ppo_transfer")}
+    if not s1 or not all(s2.values()):
+        return
+    fig, axes = plt.subplots(1, 3, figsize=(7.4, 2.6))
+    panels = [
+        (axes[0], {"PPO": s1}, "eval/return_mean", 1.0, "Stage 1: validation return"),
+        (axes[1], {"PPO scratch": s2["scratch"], "PPO transfer": s2["transfer"]}, "eval/return_mean", 1.0,
+         "Stage 2: validation return"),
+        (axes[2], {"PPO scratch": s2["scratch"], "PPO transfer": s2["transfer"]}, "eval/elemental_accuracy", 100.0,
+         "Stage 2: right element (%)"),
+    ]
+    for ax, groups, key, scale, title in panels:
+        for label, dirs in groups.items():
+            color = COLOR["PPO transfer"] if "transfer" in label else COLOR["PPO"]
+            xs, m, lo, hi = _band(dirs, key, scale=scale)
+            ax.plot(xs, m, color=color, label=f"{label.replace('PPO ', '')} (n={len(dirs)})")
+            ax.fill_between(xs, lo, hi, color=color, alpha=0.18, lw=0)
+        ax.set_title(title, loc="left")
+        ax.set_xlabel("Ticks (millions)")
+    axes[1].legend(frameon=False, loc="lower right")
+    fig.subplots_adjust(wspace=0.32)
+    _save(fig, "final_stage12_curves")
+
+
+FIGURES = {"learnability": fig_learnability, "action_repeat": fig_action_repeat, "tuning": fig_tuning,
+           "final_single": fig_final_single}
 
 
 def main() -> None:

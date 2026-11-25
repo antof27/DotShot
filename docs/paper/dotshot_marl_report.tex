@@ -365,7 +365,43 @@ On Stage 2, starting PPO from the Stage 1 policy with a reset weapon head raised
 \section{Results}
 \label{sec:results}
 
-% RESULTS: final 5-seed runs per stage, filled in from docs/results/final_stage*.json.
+Every row below has 5 seeds; each seed's final policy is scored on 32 test episodes. We report the mean over seeds with a 95\% bootstrap interval.
+
+\subsection{Stages 1 and 2: Aiming, Then Choosing the Element}
+
+\begin{table}[t]
+\centering
+\caption{Single-agent results after 4M ticks (5 seeds, 32 test episodes each). The transfer run starts from the Stage 1 policy of the same seed, with its weapon head reset.}
+\label{tab:results-stage12}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llcccccc@{}}
+\toprule
+Stage & Run & Return [95\% CI] & Win & Kills & Right element & Deaths & Moving \\
+\midrule
+1 & PPO from scratch & $43.15\;[39.85, 45.69]$ & 100.0\% & 20.4 & 100.0\% & 0.00 & 95\% \\
+2 & PPO from scratch & $22.46\;[21.35, 23.29]$ & 93.1\% & 8.6 & 77.8\% & 0.07 & 86\% \\
+2 & PPO from Stage 1 & $\mathbf{44.17}\;[42.46, 46.34]$ & 78.1\% & \textbf{18.7} & \textbf{91.6\%} & 0.22 & 98\% \\
+% STAGE12-BASELINES-ROWS
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage12_curves.png}
+\caption{Validation curves of the single-agent runs (mean and 95\% bootstrap band over 5 seeds). Left: Stage 1 PPO levels off near a return of 43 after about 3M ticks. Middle and right: on Stage 2, the policy transferred from Stage 1 reaches twice the return of the scratch policy, and the share of hits with the right element climbs past 90\% within 1.5M ticks while the scratch policy stays below 80\%. The transferred policy starts at 0\%: its weapon head is reset to a uniform distribution, so the deterministic evaluation picks the first weapon action, which is to hold fire.}
+\label{fig:results-stage12}
+\end{figure}
+
+Table~\ref{tab:results-stage12} and Figure~\ref{fig:results-stage12} show the single-agent results. Stage 1 is solved: every seed wins all of its test episodes without dying. On Stage 2, starting from the Stage 1 policy doubles the return and the kills, and lifts the share of correct-element hits from 77.8\% to 91.6\%. The Stage 1 network already knows how to move and aim, so only the weapon choice has to be learned.
+
+The transferred policy wins fewer episodes, though: 78.1\% against 93.1\%. It is more aggressive. It moves 98\% of the time, engages more enemies at once and dies three times as often (0.22 against 0.07 deaths per episode); two of its five seeds win only 56--66\% of their episodes. The reward pays more for kills than for survival, and PPO follows it. This is a property of the reward, not a failure of the learner, and it is worth keeping in mind when a single number is used to rank policies.
+
+Shaping does not explain the gains. Aim shaping and the element credit together make up about a third of the transferred policy's return ($2.6 + 12.2$ of $44.2$). Both grow only with useful shots: the credit has zero expectation for a random weapon, and correct hits ($+15.3$) and kills ($+9.4$) rise in the same proportion. The agents fire 8.2 shots per 100 ticks, close to the Striker's maximum of 8.3.
+
+% RESULTS: Stages 3-4 (warm-started rows, scratch pilot and scaled scratch rows), behaviour analysis, screenshots.
 
 \section{Discussion and Limitations}
 \label{sec:discussion}

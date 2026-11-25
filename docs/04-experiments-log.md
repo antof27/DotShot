@@ -167,7 +167,22 @@ Two things to keep in mind when reading the search results:
 
 ## 4.6 Final Results
 
-<!-- FINAL-RESULTS: 5-seed test results per stage, behaviour audit, learning curves. -->
+All rows: 5 seeds (0–4), final policy, 32 `test` episodes per seed. Return: mean over seeds [95% bootstrap CI]; other columns: mean over seeds. Summaries: `docs/results/final_stage*.json`; curves: `docs/assets/figures/final_stage12_curves.png`.
+
+### 4.6.1 Stages 1 and 2 (PPO, 4M ticks)
+
+| Stage | Run | Return [95% CI] | IQM | Win (%) | Kills / ep | Right element (%) | Deaths / ep | Move | Hold |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| 1 | PPO from scratch | 43.15 [39.85, 45.69] | 43.90 | 100.0 | 20.4 | 100.0 | 0.00 | 0.95 | 0.09 |
+| 2 | PPO from scratch | 22.46 [21.35, 23.29] | 22.78 | 93.1 | 8.6 | 77.8 | 0.07 | 0.86 | 0.05 |
+| 2 | PPO from the Stage 1 policy | **44.17** [42.46, 46.34] | 43.50 | 78.1 | **18.7** | **91.6** | 0.22 | 0.98 | 0.06 |
+
+<!-- STAGE12-BASELINES-ROWS -->
+
+- **Stage 1 is solved.** Every seed wins all 32 test episodes without dying, with 20 kills per episode. Since Stage 1 has only Fire enemies, 100% elemental accuracy is expected once the agent fires Water.
+- **Transfer doubles what the Stage 2 agent achieves**: twice the kills (18.7 vs 8.6), twice the return, and 91.6% instead of 77.8% right elements. The weapon head starts uniform after the reset, and the Stage 1 trunk already knows how to aim and move, so the agent only has to learn which element to load.
+- **Transfer wins fewer episodes (78.1% vs 93.1%).** The transferred agent is more aggressive: it moves 98% of the time, fights more enemies at once and dies 0.22 times per episode instead of 0.07. Two of its five seeds win 56–66% of episodes, the other three 84–94%. The return rewards kills more than survival, so PPO trades some survival for kills. The scratch agent wins more often because it engages less.
+- **No sign of reward hacking.** Aim shaping and the element credit together make up about a third of the return (Stage 2 transfer: 2.6 + 12.2 of 44.2). Both scale with useful shots: the credit is zero in expectation for a random weapon, and correct hits (+15.3) and kills (+9.4) grow in the same proportion. The agents fire 8.2 shots per 100 ticks, essentially the Striker's maximum of 8.3, and hold fire only 5–9% of the time.
 
 ---
 
