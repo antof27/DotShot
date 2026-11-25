@@ -36,5 +36,5 @@ Use this skill at the start and end of every development phase in `RL/RL-game1` 
 ## 3. Repository Hygiene & Safety Rules
 
 - **Never run** `git push --force`, `git reset --hard`, or `git clean -fd` without explicit user permission.
-- **Preserve legacy work**: Leave the user's pre-existing modified v1 files untouched unless explicitly asked to stage or revert them.
+- **Preserve the user's work**: Leave files the user modified outside the current task untouched unless explicitly asked to stage or revert them.
 - **Cross-Device Portability**: Always verify that `requirements.txt`, `pyproject.toml`, `configs/`, and `docs/` push cleanly so another workstation can clone `dev`, build `.venv`, and reproduce any experiment immediately.

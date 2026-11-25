@@ -1,235 +1,199 @@
-# Technical Architecture: DotShot Game v2
+# Technical Architecture
 
-**Status:** Approved Baseline (Milestone 0)  
-**Target Repository:** `antof27/RL-game1`  
-**Related Specs:** [PRD.md](PRD.md) | [DECISIONS.md](DECISIONS.md) | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
-
----
-
-## 1. System Topology
-
-DotShot Game v2 separates simulation physics, rendering, RL/MARL training, statistical evaluation, and living documentation into explicit layers with strict unidirectional dependencies.
-
-```mermaid
-flowchart TD
-    subgraph Governance ["Governance and Skills"]
-        AgentsMD["AGENTS.md"]
-        Skills[".agents/skills/ (5 Modular Skills)"]
-        AgentDocs[".agents/docs/ (PRE-PRD, PRD, Plan, Arch, ADRs)"]
-    end
-
-    subgraph Simulator ["src/dotshot/ (Headless Core + Optional Render)"]
-        Config["core/config.py (Stage 1-4 Presets)"]
-        Arena["core/arena.py (1440x960 Cover + LOS Raycast)"]
-        Entities["core/entities.py (Classes, Core, Boss, Enemies)"]
-        Rewards["core/rewards.py (Indiv + Team Mixing)"]
-        SingleEnv["envs/single_agent.py (Gymnasium)"]
-        MultiEnv["envs/multi_agent.py (PettingZoo ParallelEnv)"]
-        Renderer["render/pygame_renderer.py (60 FPS + Tab Overlay)"]
-        Config --> Arena
-        Arena --> SingleEnv
-        Arena --> MultiEnv
-        Entities --> SingleEnv
-        Entities --> MultiEnv
-        Rewards --> SingleEnv
-        Rewards --> MultiEnv
-        SingleEnv -.-> Renderer
-        MultiEnv -.-> Renderer
-    end
-
-    subgraph Benchmarks ["src/benchmarks/ (Reproducible Training and Eval)"]
-        YAML["configs/*.yaml"]
-        SARunner["runners/run_single_agent.py"]
-        MARLNet["marl/networks.py + buffer.py"]
-        MARLAlgo["marl/algos/ (IPPO, QMIX, MAPPO, HAPPO, MAT)"]
-        Eval["eval/evaluate.py + plot_results.py"]
-        YAML --> SARunner
-        YAML --> MARLAlgo
-        MARLNet --> MARLAlgo
-        SARunner --> Eval
-        MARLAlgo --> Eval
-    end
-
-    subgraph Handbook ["docs/ (Docsify + GitHub Pages)"]
-        Chapters["01..04 Markdown Chapters (KaTeX + Mermaid)"]
-        Bib["references.bib"]
-        Assets["assets/figures/ + assets/videos/"]
-        Validator["scripts/validate_docs.py"]
-        Eval --> Assets
-        Eval --> Chapters
-        Validator --> Chapters
-        Validator --> Bib
-    end
-
-    SingleEnv --> SARunner
-    MultiEnv --> MARLAlgo
-```
+**Simulator version:** DotShot v2.2 (`SIM_VERSION` in `src/dotshot/core/config.py`)
+**Related:** [DECISIONS.md](DECISIONS.md) | [ROADMAP.md](ROADMAP.md) | [Simulator spec](../../docs/03-dotshot-simulator-spec.md)
 
 ---
 
-## 2. Target Repository Directory Tree
-
-```text
-RL/RL-game1/
-|-- AGENTS.md                          # Permanent agent governance rules
-|-- pyproject.toml                     # Editable package metadata (src/ layout for dotshot & benchmarks)
-|-- requirements.txt                   # Pinned Windows CUDA dependencies
-|-- .agents/
-|   |-- docs/                          # PRE_PRD, PRD, IMPLEMENTATION_PLAN, ARCHITECTURE, DECISIONS, ROADMAP
-|   |-- skills/                        # 12 workspace skills (humanizer, notelia-docs, scientific-latex-report, etc.)
-|-- src/
-|   |-- dotshot/
-|   |   |-- __init__.py                # Registers Gymnasium Stage 1-2 IDs
-|   |   |-- core/
-|   |   |   |-- config.py              # Stage presets, class stats, arena geometry
-|   |   |   |-- arena.py               # 1440x960 AABB obstacles, circle collisions, LOS raycasts, 8-ray LIDAR
-|   |   |   |-- entities.py            # Agents (Vanguard/Striker/Support), Core, Enemies, ShieldedBoss, Bullets
-|   |   |   |-- engine.py              # Pure headless simulation loop and smooth v2.1 aim/LOS caching
-|   |   |   |-- rewards.py             # Individual + Team reward mixing and raw component telemetry
-|   |   |-- envs/
-|   |   |   |-- single_agent.py        # DotShotSingleEnv (Gymnasium Stages 1-2)
-|   |   |   |-- multi_agent.py         # DotShotParallelEnv (PettingZoo ParallelEnv Stages 3-4)
-|   |   |-- render/
-|   |       |-- pygame_renderer.py     # Pre-cached neon glow renderer, HUD, MARL Tab overlay
-|   |-- benchmarks/
-|       |-- utils/
-|       |   |-- seeding.py             # Deterministic seed + Git SHA + hardware capture
-|       |   |-- logger.py              # TensorBoard + JSONL telemetry writer
-|       |-- runners/
-|       |   |-- run_single_agent.py    # Random, Heuristic, SB3 A2C, SB3 PPO
-|       |-- marl/
-|       |   |-- networks.py            # Factored Actor, Centralized Critic, Branching QMIX, Factored MAT/PMAT/RoMAT
-|       |   |-- buffer.py              # On-policy MARL rollout buffer + off-policy episode replay buffer
-|       |   |-- policy_loader.py       # Checkpoint loader for evaluation & enjoy.py
-|       |   |-- vec_marl_env.py        # Vectorized Dummy/Subproc MARL env wrapper
-|       |   |-- train_marl.py          # Unified YAML-driven MARL CLI
-|       |   |-- algos/
-|       |       |-- common.py, ippo.py, qmix.py, mappo.py, happo.py, mat.py
-|       |-- eval/
-|           |-- evaluate.py            # Multi-seed IQM, Median, Mean, 95% bootstrap CIs
-|           |-- plot_results.py        # Learning curves, bar/radar charts, Markdown tables, MP4 clips
-|-- configs/                           # Versioned YAML experiment definitions (stage1..stage4)
-|-- docs/                              # Unified Docsify site, LaTeX paper/, results/*.json, assets/ (figures, screenshots, videos, legacy_v1_plots)
-|-- scripts/
-|   |-- enjoy.py                       # Manual play, checkpoint viewer, Tab overlay, MP4 export
-|   |-- capture_screenshots.py         # Deterministic 1440x960 screenshot generator
-|   |-- run_m2_suite.py                # Parallel CUDA Milestone 2 sweep orchestrator
-|   |-- plot_m2_ablations.py           # Alpha and LOS ablation plotter
-|   |-- validate_docs.py               # Citation, link, asset, and Humanizer prose validator
-|-- tests/                             # pytest suite (single env, multi env, MARL algos)
-|-- legacy_v1/                         # Archived v1 reference prototype (env/, marl/, models/, v1 CLI scripts)
-```
-
----
-
-## 3. Dec-POMDP State, Observation, and Action Schemas
-
-### 3.1 Factored Action Space
-
-Every agent $i \in \mathcal{I}$ uses a shared factored discrete action space:
-
-$$\mathcal{A}_i = \text{MultiDiscrete}([3, 3, 32, 4])$$
-
-- `a[0]`: horizontal movement $\{-1, 0, +1\}$ mapped from $\{0, 1, 2\}$
-- `a[1]`: vertical movement $\{-1, 0, +1\}$ mapped from $\{0, 1, 2\}$
-- `a[2]`: discrete aim angle bin $k \in \{0, \dots, 31\}$, corresponding to $\theta_k = \frac{2\pi k}{32}$ ($11.25^\circ$ angular resolution)
-- `a[3]`: weapon / ability trigger:
-  - `0`: Hold fire (or trigger class tactical ability when cooldown is ready in Stage 4, e.g., Vanguard directional shield pulse or Support repair/mark pulse, without forcing stray bullets)
-  - `1`: Water projectile (counters Fire)
-  - `2`: Grass projectile (counters Water)
-  - `3`: Fire projectile (counters Grass)
-
-Since v2.2 (ADR-015) one decision is held for `action_repeat = 8` simulator ticks and the rewards of those ticks are summed. Training budgets are reported in ticks (decisions × 8).
-
-### 3.2 Decentralized Local Observation $o_i^t$
-
-All scalar features are normalized cleanly into $[-1.0, 1.0]$ as `np.float32`. Visibility to hostile entities is gated by distance and segment-AABB Line-of-Sight (LOS) in Stages 3–4 (when partial observability is enabled), ensuring genuine Dec-POMDP partial observability.
-
-| Feature Block | Slot Count | Features per Slot | Dimensions |
-| :--- | :---: | :--- | :---: |
-| **Agent Self-State** | 1 | Normalized $(x, y)$, $(v_x, v_y)$, HP ratio, fire cooldown ratio, ability cooldown ratio, alive flag, last weapon one-hot (3), class role one-hot (3) | **14** |
-| **Central Core State** | 1 | Relative $(\Delta x, \Delta y)$, distance, Core HP ratio, Core under-attack flag (0 in Stages 1–2) | **5** |
-| **Obstacle / Wall LIDAR** | 8 | Normalized distance along 8 cardinal/diagonal rays ($0^\circ, 45^\circ, \dots, 315^\circ$) to nearest wall or cover block | **8** |
-| **Top-$K$ Visible Hostiles** | $K = 5$ | Relative $(\Delta x, \Delta y)$, $(\sin\theta, \cos\theta)$, distance, velocity $(v_x, v_y)$, HP ratio, shield HP ratio, element one-hot (3), boss flag, marked debuff flag, active/LOS flag | $5 \times 15 = \mathbf{75}$ |
-| **Teammates / Neutral Allies** | $M = 3$ | Relative $(\Delta x, \Delta y)$, distance, HP ratio, role/neutral one-hot (4), alive flag | $3 \times 9 = \mathbf{27}$ |
-| **Incoming Enemy Projectiles** (v2.2) | $K = 4$ | Relative position, velocity, time to closest approach, miss distance, active flag | $4 \times 7 = \mathbf{28}$ |
-| **Status and Core Threat** (v2.2) | 1 | Shield timer, episode progress, direction to the enemy closest to the Core, flag | **5** |
-| **Crosshair** (v2.2) | 1 | Element one-hot of the visible enemy on the current aim ray, flag | **4** |
-| **Total $D_{\text{obs}}$** | — | Fixed-dimension schema across Stages 1–4 for direct curriculum transfer | **166** |
-
-Keeping $D_{\text{obs}} = 166$ identical across all four stages lets a Stage 1 policy initialise Stage 2 and lets a Stage 2 policy act (and be distilled) in Stages 3–4 without dimensional mismatch.
-
-### 3.3 Privileged Global State $s^t$ (CTDE Only)
-
-Exposed via `env.state()` for `Branching-QMIX`, `MAPPO`, `HAPPO`, `HATRPO`, and `MAT`:
-- Full noise-free agent array ($N_{\max} \times 16$ features: all agents' positions, velocities, HP, cooldowns, roles, alive masks, shield and respawn timers),
-- Core state ($5$ features: position, HP, shield/threat density within radius),
-- Full active enemy & boss array ($E_{\max} \times 15$ features regardless of agent LOS occlusion),
-- Up to 16 active enemy projectiles ($16 \times 5$: position, direction, active flag; v2.2),
-- Global wave telemetry ($4$ features: normalized wave index, enemies remaining, active boss count, elapsed episode progress).
-
-Stage 3 has $|s^t| = 241$ and Stage 4 has $|s^t| = 287$. HARL critics use this state with `state_type: EP` and one shared team reward (ADR-013); the `FP` variant feeds agent $i$ the input $[s^t, \text{one\_hot}(i), o_i^t]$.
-
-### 3.4 Official Learner Adapters (`src/benchmarks/official/`)
-
-| Module | Role |
-| :--- | :--- |
-| `harl_dotshot_env.py` | PettingZoo → HARL lists; dead agents reported done for `active_masks` (never all at once mid-episode); EP/FP critic input |
-| `harl_runner.py` | Builds unmodified HARL actors, buffers and critics; patches the MultiDiscrete ratio aggregation (`mean`) and masked entropy; LR decay, minibatches, critic warm-up, BC / distillation warm start |
-| `mat_discrete.py`, `mat_dotshot_env.py`, `mat_runner.py` | Upstream MAT with factored categorical heads `(3, 3, 32, 4)`; truncation bootstrap; same evaluation protocol |
-| `behaviour_cloning.py` | Datasets from the calibrated script or a Stage 2 PPO teacher; cloning into HARL or MAT actors |
-| `bohb_tune.py` | One Optuna study per stage and learner (journal storage under `runs/optuna/`) |
-| `../eval/marl_eval.py` | The single evaluator: exact episode counts on disjoint `val`/`test` seed sets, reward components, behaviour audit |
-
----
-
-## 4. CTDE Data Flow Across Algorithm Families
+## 1. System Overview
 
 ```mermaid
 flowchart LR
-    subgraph Env ["DotShotParallelEnv"]
-        Obs["Local Obs o_i^t"]
-        State["Privileged Global State s^t"]
+    subgraph Sim ["src/dotshot (simulator)"]
+        Engine["core/engine.py<br/>DotShotEngine"]
+        Rewards["core/rewards.py"]
+        Single["envs/single_agent.py<br/>Gymnasium, Stages 1-2"]
+        Multi["envs/multi_agent.py<br/>PettingZoo, Stages 3-4"]
+        Render["render/pygame_renderer.py"]
     end
 
-    subgraph Decentralized ["Decentralized Execution (All Algos)"]
-        Actor["Factored Actor pi_i(a_i | o_i^t)"]
-        QAgent["Branching Q_i(o_i^t, a_i)"]
+    subgraph Bench ["src/benchmarks (learners and evaluation)"]
+        SB3["runners/run_single_agent.py<br/>SB3 PPO"]
+        HARL["official/harl_runner.py<br/>MAPPO, HAPPO, HATRPO, HAA2C"]
+        MAT["official/mat_runner.py<br/>MAT, factored heads"]
+        BC["official/behaviour_cloning.py"]
+        Base["runners/run_marl_baselines.py<br/>scripted policies"]
+        Eval["eval/marl_eval.py<br/>one evaluator"]
+        Tune["official/bohb_tune.py<br/>Optuna studies"]
     end
 
-    subgraph Centralized ["Centralized Training Only"]
-        Critic["MAPPO / HAPPO Critic V(s^t) + ValueNorm"]
-        Mixer["QMIX Hypernetwork Mixer Q_tot(Q_1..n, s^t)"]
-        MATDec["MAT / PMAT / RoMAT Causal Decoder"]
-    end
+    Upstream["third_party/<br/>HARL, Multi-Agent-Transformer<br/>(pinned, unmodified)"]
 
-    Obs --> Actor
-    Obs --> QAgent
-    State --> Critic
-    State --> Mixer
-    Obs --> MATDec
-    State --> MATDec
+    Engine --> Rewards
+    Engine --> Single
+    Engine --> Multi
+    Engine --> Render
+    Single --> SB3
+    Multi --> HARL
+    Multi --> MAT
+    Multi --> Base
+    Upstream --> HARL
+    Upstream --> MAT
+    Base --> BC
+    BC --> HARL
+    BC --> MAT
+    SB3 --> Eval
+    HARL --> Eval
+    MAT --> Eval
+    Base --> Eval
+    Tune --> SB3
+    Tune --> HARL
+    Tune --> MAT
 ```
 
-### Key Architectural Components (`benchmarks/marl/networks.py`)
-1. **`FactoredMultiDiscreteActor`**: 2-layer `128`-unit MLP (or optional GRU) with orthogonal initialization and LayerNorm, branching into 4 independent linear logits (`[3, 3, 32, 4]`).
-2. **`CentralizedCritic`**: 2-layer `256`-unit MLP consuming `s^t` (or `[s^t, o_i^t]`), paired with a running mean/std **ValueNorm** module to stabilize return scale shifts across waves.
-3. **`BranchingQNetwork` + `QMIXMixer`**: Shared trunk computes scalar $V_i(o_i)$ and four centered branch advantages $A_i^{(k)}(o_i, a_i^{(k)})$; `QMIXMixer` passes `s^t` through hypernetworks constrained via `torch.abs()` to enforce $\frac{\partial Q_{\text{tot}}}{\partial Q_i} \ge 0$.
-4. **`HAPPO` Sequential Update**: Agents maintain independent actor networks $\theta^1, \dots, \theta^n$. At each epoch, a random permutation $i_{1:n}$ is sampled; agent $i_m$ updates against the advantage weighted by the accumulated policy ratio $M^{i_{1:m-1}} = \prod_{j=1}^{m-1} \frac{\pi_{\text{new}}^{i_j}(a^{i_j} \mid o^{i_j})}{\pi_{\text{old}}^{i_j}(a^{i_j} \mid o^{i_j})}$.
-5. **`FactoredMATNetwork`**: Transformer Encoder maps `[o_1, ..., o_n]` (plus optional `RoMAT` role embeddings) into contextual representations; Transformer Decoder autoregressively samples `a_i` along the fixed (`MAT`) or Plackett-Luce prioritized (`PMAT`) agent sequence using causal attention and 4 factored action embeddings summed per step.
+The simulator knows nothing about learners. Learners reach it only through the two environment wrappers. Every learner and every scripted baseline is scored by the same evaluator.
 
 ---
 
-## 5. Experiment Artifact Schema
+## 2. Repository Layout
 
-Every experiment run writes to a run directory such as `runs/final/stage3/<config>/seed_<k>/` (`scripts/run_jobs.py`):
+```text
+RL-game1/
+|-- src/
+|   |-- dotshot/
+|   |   |-- core/
+|   |   |   |-- arena.py          # Obstacles, circle collision, line of sight, 8-ray LIDAR
+|   |   |   |-- config.py         # StageConfig presets, classes, elements (SIM_VERSION)
+|   |   |   |-- engine.py         # Ticks, action repeat, observations, global state, behaviour audit
+|   |   |   |-- entities.py       # Agents, enemies, bosses, projectiles, Core, neutral allies
+|   |   |   `-- rewards.py        # Named individual and team reward terms
+|   |   |-- envs/
+|   |   |   |-- single_agent.py   # Gymnasium env, Stages 1-2
+|   |   |   `-- multi_agent.py    # PettingZoo ParallelEnv, Stages 3-4
+|   |   `-- render/
+|   |       `-- pygame_renderer.py
+|   `-- benchmarks/
+|       |-- eval/
+|       |   |-- marl_eval.py      # Seed splits, exact-n episodes, metrics, reward components
+|       |   `-- evaluate.py       # Mean, IQM, bootstrap CIs, run aggregation
+|       |-- official/             # Adapters around the pinned upstream learners
+|       |   |-- harl_dotshot_env.py
+|       |   |-- harl_runner.py
+|       |   |-- mat_discrete.py
+|       |   |-- mat_dotshot_env.py
+|       |   |-- mat_runner.py
+|       |   |-- behaviour_cloning.py
+|       |   `-- bohb_tune.py
+|       |-- runners/
+|       |   |-- run_single_agent.py    # SB3 PPO, Stage 1 -> 2 transfer
+|       |   `-- run_marl_baselines.py  # random, noop, charge, three heuristics
+|       `-- utils/
+|           |-- logger.py         # metrics.jsonl + TensorBoard + resolved config
+|           `-- seeding.py        # Seeds, torch threads and VRAM cap, git and hardware info
+|-- configs/
+|   |-- official/                 # Tuned configs exported by bohb_tune.py (final runs)
+|   |-- baselines/                # Scripted baselines
+|   `-- ablations/                # Configs behind the development experiments (log §4.4)
+|-- scripts/
+|   |-- run_jobs.py               # Resumable multi-seed launcher
+|   |-- optuna_lane.sh            # Runs several studies one after another
+|   |-- optuna_status.py          # Study progress and best trials
+|   |-- monitor_runs.py           # Learning curves plus behaviour flags
+|   |-- report_final.py           # Final tables and figures
+|   |-- check_gate.py             # Learner vs baselines acceptance check
+|   |-- enjoy.py                  # Manual play and policy replay, MP4 export
+|   |-- capture_screenshots.py
+|   `-- validate_docs.py          # Citation and link checks
+|-- tests/
+|-- docs/                         # Handbook (docsify), report, results, assets
+`-- third_party/                  # HARL and MAT as pinned git submodules
+```
+
+---
+
+## 3. Environment Interfaces
+
+| | Stages 1–2 | Stages 3–4 |
+| :--- | :--- | :--- |
+| Wrapper | `DotShotSingleEnv` (Gymnasium) | `DotShotParallelEnv` (PettingZoo) |
+| Observation | `Box(-1, 1, (166,))` | per agent `Box(-1, 1, (166,))` |
+| Global state | – | `state()`: 241 (Stage 3), 287 (Stage 4) |
+| Action | `MultiDiscrete([3, 3, 32, 4])` | per agent `MultiDiscrete([3, 3, 32, 4])` |
+| One `step` | 8 ticks (`action_repeat`) | 8 ticks |
+| Reward | individual | one shared team reward per agent |
+
+Both wrappers take `env_overrides`, a dictionary of `StageConfig` fields applied on top of the stage preset. Experiments use it for ablations (for example `action_repeat: 1`) instead of editing the presets. The `info` dictionary carries `reward_components` (per-episode sums of every named term), `episode_length` and the behaviour audit.
+
+The layout of the observation, state and reward is specified in `docs/03-dotshot-simulator-spec.md`.
+
+---
+
+## 4. Learners
+
+### 4.1 Single agent: Stable-Baselines3 PPO
+
+`runners/run_single_agent.py` trains `PPO("MlpPolicy")` on 8 in-process environments (`DummyVecEnv`; on Windows subprocess IPC costs more than a simulator step). The multi-discrete action space gives four categorical heads. Stage 2 can start from a Stage 1 checkpoint (`init_model_path`); `reset_weapon_head` zeroes the weapon branch of the action head, because Stage 1 has only Fire enemies and that head collapses onto Water. After loading, the runner reseeds torch and the environments with the run seed (SB3 restores the checkpoint's seed on load).
+
+### 4.2 Multi-agent: HARL (MAPPO, HAPPO, HATRPO, HAA2C)
+
+`official/harl_runner.py` builds HARL's actors, critic and buffers from `third_party/HARL` and reuses its update code. `harl_dotshot_env.py` converts the PettingZoo env into HARL's list format. Corrections are applied from outside the submodule:
+
+| Correction | Where |
+| :--- | :--- |
+| True joint PPO ratio: the joint log-prob is stored in 4 columns, so `action_aggregation: mean` instead of `prod` | config default |
+| Per-branch entropy with masking, replacing a `(B, B)` tensor | `ACTLayer.evaluate_actions` patch |
+| Dead agents reported as done so active masks drop them; never all done at once mid-episode, so a full wipe does not reset the episode | `harl_dotshot_env.py` |
+| EP critic on the global state, one shared team reward | config default |
+| MAPPO shares one actor on both stages | config default |
+| Linear LR decay, minibatch counts, critic-only warm-up updates | config keys |
+| Warm start from behaviour cloning (`warm_start: bc`) | `behaviour_cloning.py` |
+
+### 4.3 Multi-agent: MAT
+
+`official/mat_discrete.py` replaces MAT's action head with four categorical heads `(3, 3, 32, 4)`. Agents are still decoded one after another; each agent's joint log-prob and entropy are sums over its branches, stored in one buffer column. `mat_runner.py` adds the value of the last state to the final reward of time-limit truncations (MAT's buffer has no `bad_masks`) and uses the same evaluator and warm starts as HARL. MAT is the only learner that runs on the GPU.
+
+### 4.4 Scripted baselines
+
+`runners/run_marl_baselines.py`: `random`, `noop`, `charge` (walk into the nearest enemy, never fire), `heuristic_nearest`, `heuristic_core_guard` and `heuristic_calibrated` (dodges, guards the Core at 240 px, leads shots, picks the counter element, uses abilities). The calibrated script is the reference for the difficulty calibration and the teacher for behaviour cloning.
+
+### 4.5 Behaviour cloning
+
+`official/behaviour_cloning.py` records 200 episodes of the calibrated script, caches the dataset under `runs/`, and fits the actor (HARL or MAT) by maximum likelihood for 30 epochs. The critic then gets 10 critic-only updates before normal RL starts, so the first policy updates do not use advantages from an untrained critic.
+
+---
+
+## 5. Evaluation
+
+`eval/marl_eval.py` is the only evaluator. Episode seeds come from two disjoint sets: `val` (base 1,000,003) for periodic evaluations, pruning and model selection, and `test` (base 2,000,003) for the final score; episode `i` uses `base + 7919 i`. Exactly `n` episodes are played; none is dropped or cut. After training, the final policy (never the best checkpoint) is scored on 32 `test` episodes. Metrics: return, win rate, kills, elemental and hit accuracy, Core HP, episode length, the behaviour audit and every reward component.
+
+`eval/evaluate.py` aggregates seeds: mean with a 95% percentile bootstrap CI, median, and the IQM only when there are at least 4 values.
+
+---
+
+## 6. Hyperparameter Search
+
+`official/bohb_tune.py` runs one Optuna study per stage and learner (`s1_sb3_ppo`, `s2_sb3_ppo`, `s{3,4}_harl_{mappo,happo,hatrpo,haa2c}`, `s{3,4}_mat`). Each has 24 trials with `TPESampler(multivariate=True)` and `HyperbandPruner` between 125k and 500k decisions (1M–4M ticks). A trial reports every 62.5k decisions on 16 `val` episodes of its first seed; one that reaches the full budget trains a second seed, and its objective is the mean final-policy return of both on 32 `val` episodes. The warm start is a categorical parameter. The best trial of each category is exported to `configs/official/<study>_<scratch|bc|transfer>.yaml` with the final budget. Storage is an Optuna journal file under `runs/optuna/` (SQLite needs SQLAlchemy extensions that the workstation's application control blocks).
+
+---
+
+## 7. Run Artifacts
+
+`scripts/run_jobs.py` writes one directory per config and seed:
 
 ```text
 runs/final/stage3/s3_harl_mappo_bc/seed_0/
-|-- config.yaml        # Resolved config + git_sha + GPU/CPU versions + seed
-|-- metrics.jsonl      # train/* losses, eval/* val curves, test/* final held-out scores, behaviour audit
-|-- tb/                # TensorBoard event files
-|-- checkpoints/
-    |-- best/          # Highest val-return checkpoint
-    |-- final/         # Final checkpoint; reported test scores always come from this one
+|-- config.yaml        # resolved config, seed, git SHA, hardware
+|-- metrics.jsonl      # train/* losses, eval/* val curves, test/* final scores
+|-- tb/                # TensorBoard events
+`-- checkpoints/
+    |-- best/          # highest val return (replays only)
+    `-- final/         # the policy that is reported
 ```
+
+A run counts as complete once `metrics.jsonl` holds its `test/return_mean` row; `run_jobs.py` skips complete runs and restarts incomplete ones. `runs/` is not committed. Curated summaries go to `docs/results/`, figures to `docs/assets/figures/`.
+
+---
+
+## 8. Hardware Budget
+
+Measured on the workstation (RTX 3060 12 GB, 8 physical cores): the pure-Python simulator bounds throughput, so HARL and SB3 run faster on the CPU than on CUDA (HARL Stage 3: 1,098 vs 754 environment steps per second). At most 6 training processes run at once, each GPU process is capped at 25% of the VRAM, and only the best and final checkpoints are kept.

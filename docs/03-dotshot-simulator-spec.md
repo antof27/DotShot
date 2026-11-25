@@ -1,163 +1,259 @@
-# 3. DotShot Game v2: Simulator Specification and Engineering Post-Mortem
+# 3. DotShot Simulator Specification (v2.2)
 
 > [!NOTE]
-> **Learning Objectives**
-> By the end of this chapter, you will be able to:
-> 1. Read the formal Dec-POMDP specification of **DotShot Game v2** across all four curriculum stages.
-> 2. Trace exact dimensions for local observations $o_i^t$, privileged global state $s^t$, factored actions, and reward mixing.
-> 3. Understand why specific simulator upgrades were introduced between DotShot v1 and DotShot v2 to expose measurable differences among MARL algorithms.
+> **What this chapter covers**
+> 1. The arena, the entities and the rules of each of the four curriculum stages.
+> 2. The exact action space, local observation (166 values) and global state used by every learner.
+> 3. The reward: every term, its weight, and how individual and team terms are combined.
+> 4. The design decisions behind DotShot v2.2 and the failures that motivated them.
+
+All values come from `src/dotshot/core/` (`config.py`, `engine.py`, `entities.py`, `rewards.py`) at simulator version `SIM_VERSION = "2.2"`. If this page and the code disagree, the code is right and this page has a bug.
 
 ---
 
-## 3.1 Why DotShot v1 Was Not Enough (Engineering Post-Mortem)
+## 3.1 Overview
 
-DotShot v1 (`legacy_v1/env/game_env.py` and `legacy_v1/marl/train_marl.py`) proved that PPO and early Transformer prototypes could learn elemental shooting in an `800×800` box. However, auditing v1 exposed five design bottlenecks that prevented rigorous MARL research:
+DotShot is a top-down 2D arena shooter. Agents move, aim in 32 directions and fire one of three elemental weapons at waves of elemental enemies. A weapon only damages an enemy of the element it counters, so each shot is a small decision: where to aim and which element to load. Four stages add one difficulty at a time, from a single agent shooting one enemy type to a heterogeneous three-agent squad defending a central Core under partial observability.
 
-| Component | DotShot v1 Limitation | DotShot v2 Engineering Solution | Impact on MARL Benchmarking |
-| :--- | :--- | :--- | :--- |
-| **Arena & Occlusion** | Empty `800×800` square; zero obstacles or vision gating | `1440×960` arena with beveled rectangular cover blocks, circle-AABB collisions, and segment-AABB Line-of-Sight (LOS) raycasts | Creates genuine partial observability under cover and forces coordinated flanking |
-| **Team Objective** | Two identical agents surviving random waves independently | Central Energy Core (`HP = 500`) + periodic **Elemental-Shielded Bosses** | Forces joint defense, shield-break windows, and focus-fire combos |
-| **Agent Diversity** | Homogeneous stats and weapons across all agents | Stage 4 heterogeneous squad: **Vanguard** (Tank), **Striker** (DPS), **Support** (Healer/Marker) | Tests parameter-sharing `MAPPO` failure modes vs `HAPPO`/`HATRPO` and `RoMAT` |
-| **Action Encoding** | `legacy_v1/marl/train_marl.py` flattened `MultiDiscrete([3,3,64,4])` into a `2304`-class integer | Factored `MultiDiscrete([3, 3, 32, 4])` policy heads and Branching Dueling Q-heads [@tavakoli2018branching] | Eliminates `2304`-way softmax explosion and preserves angular locality |
-| **Environment API** | Concatenated vector inside one Gymnasium `Box` | Dual standard APIs: **Gymnasium** (`Stages 1–2`) + **PettingZoo `ParallelEnv`** (`Stages 3–4`) with explicit `env.state()` | Cleanly separates decentralized $o_i^t$ from centralized CTDE $s^t$ |
+The simulator is pure Python and NumPy with no rendering dependency. `DotShotEngine` holds the physics and the reward. Two thin wrappers expose it: a Gymnasium environment for Stages 1–2 (`dotshot/envs/single_agent.py`) and a PettingZoo `ParallelEnv` for Stages 3–4 (`dotshot/envs/multi_agent.py`). A separate Pygame renderer (`dotshot/render/`) draws the same engine state for replays and screenshots.
 
----
+### Time: ticks and decisions
 
-## 3.2 Four-Stage Progressive Curriculum
+The engine advances in **ticks**. An agent does not choose an action every tick: it chooses one every `action_repeat = 8` ticks, the action is held for those 8 ticks, and their rewards are summed into one transition. We call one such step a **decision**. A shot can only leave every 12–16 ticks (the fire cooldown), so at one decision per tick most aim and weapon choices had no effect and the learner could not tell which ones mattered (ADR-007). All training budgets in this handbook are given in ticks, so runs with different decision intervals compare at equal experience.
 
-```mermaid
-flowchart LR
-    S1["Stage 1: Solo Fundamentals (Fire Only + 4 Pillars)"] --> S2["Stage 2: Elemental Mastery (All 3 Elements + Enemy Fire + Neutral Allies)"]
-    S2 --> S3["Stage 3: Homogeneous Co-op (2 Strikers + Core Defense + Shielded Boss)"]
-    S3 --> S4["Stage 4: Heterogeneous Squad (Vanguard + Striker + Support + Core + Boss)"]
-```
-
-| Stage | Env / API | Agents & Roles | Enemies & Hazards | Core Mechanics Tested |
-| :---: | :--- | :--- | :--- | :--- |
-| **Stage 1** | `DotShot-Stage1-v1` (Gymnasium) | 1 `Striker` | `Fire` enemies (max 4), 4 cover pillars | Kiting, obstacle collision, target leading, Water shot selection |
-| **Stage 2** | `DotShot-Stage2-v1` (Gymnasium) | 1 `Striker` | `Water/Grass/Fire` (max 6), enemy shots, neutral allies | Cyclic weapon switching, projectile dodging, friendly-fire avoidance |
-| **Stage 3** | `DotShotParallelEnv(stage=3)` (PettingZoo) | 2 `Striker` agents | Mixed waves (max 8), **Shielded Boss** every 8 kills, 6 cover blocks, LOS partial obs | Core defense, focus-fire combos, CTDE credit assignment |
-| **Stage 4** | `DotShotParallelEnv(stage=4)` (PettingZoo) | 3 agents: `Vanguard`, `Striker`, `Support` | Heavy waves (max 10), **Shielded Boss** every 7 kills, LOS partial obs | Asymmetric role specialization, shield aggro, repair/mark synergy |
+| Stage | Episode limit (ticks) | Decisions per full episode |
+| :---: | :---: | :---: |
+| 1 | 1,500 | 188 |
+| 2 | 1,800 | 225 |
+| 3 | 2,000 | 250 |
+| 4 | 2,200 | 275 |
 
 ---
 
-## 3.3 Formal Dec-POMDP Specification
+## 3.2 The Four-Stage Curriculum
 
-DotShot Stages 3 and 4 instantiate a finite-horizon cooperative Dec-POMDP [@oliehoek2016decpomdp] $\mathcal{G} = \langle \mathcal{I}, \mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \Omega, \mathcal{O}, \gamma \rangle$:
+| | Stage 1 | Stage 2 | Stage 3 | Stage 4 |
+| :--- | :--- | :--- | :--- | :--- |
+| Agents | 1 Striker | 1 Striker | 2 Strikers | Vanguard, Striker, Support |
+| Interface | Gymnasium | Gymnasium | PettingZoo | PettingZoo |
+| Enemy elements | Fire only | Water, Grass, Fire | all three | all three |
+| Enemies at once | 4 | 6 | 8 | 10 |
+| Enemies shoot | no | yes | yes | yes (17 damage) |
+| Neutral allies | no | yes (friendly fire) | no | no |
+| Bosses | no | no | every 8 kills | every 7 kills |
+| Central Core | no | no | 500 HP | 550 HP |
+| Observability | full | full | 760 px, line of sight | 760 px, line of sight |
+| Death | ends the episode | ends the episode | respawn after 150 ticks | respawn after 150 ticks |
+| Win | survive to the limit | survive to the limit | reach the limit with the Core alive | same |
+| Reward | individual | individual | shared team reward | shared team reward |
 
-### Elemental Advantage Graph and Boss Shield Mechanics
-- Weapons and enemies belong to `{0: Water, 1: Grass, 2: Fire}`.
-- Counter relation: **Water beats Fire**, **Grass beats Water**, **Fire beats Grass**. Mismatched hits deal `0` hull damage and trigger an `IMMUNE` event plus a wrong-element penalty.
-- In Stages 3 and 4, periodic **Shielded Bosses** spawn with an elemental shield (`110+` HP). While the shield remains intact, hull damage is reduced by `90%`. Shattering the shield with the counter-element opens a `160`-tick vulnerability window (`+35%` team damage, `+35%` bonus for Striker) and awards team shield-break and combo-kill bonuses.
+What each stage teaches:
 
-### Factored Action Space $\mathcal{A}_i$
-Every agent $i$ selects a 4-tuple from `MultiDiscrete([3, 3, 32, 4])`:
-- $a_{i,0} \in \{0, 1, 2\} \mapsto \{-1, 0, +1\}$ horizontal movement (normalized so diagonals preserve unit speed).
-- $a_{i,1} \in \{0, 1, 2\} \mapsto \{-1, 0, +1\}$ vertical movement.
-- $a_{i,2} \in \{0, \dots, 31\}$ aim angle $\theta_k = \frac{2\pi k}{32}$ (`11.25°` bins).
-- $a_{i,3} \in \{0, 1, 2, 3\}$: `0` holds fire (and triggers the Stage 4 class tactical ability when cooldown is ready and threats or wounded allies are in range), `1` fires Water, `2` fires Grass, `3` fires Fire.
+- **Stage 1: aiming and moving.** One enemy element, so the weapon choice is trivial. The agent must lead moving targets, use the four pillars as cover and avoid contact damage.
+- **Stage 2: element choice.** Enemies of all three elements shoot back, and up to two neutral allies wander through the arena. A wrong-element hit does nothing to the enemy, and hitting a neutral ally is penalised. The agent has to read the element of its target and pick the counter.
+- **Stage 3: cooperation.** Two Strikers defend a Core in the middle of the arena. They only see enemies within 760 px and in line of sight, so each must cover what the other cannot see. Bosses with elemental shields appear every 8 kills.
+- **Stage 4: heterogeneous roles.** A Vanguard (tank with a taunting shield), a Striker (damage) and a Support (healing and target marking) share one Core. The roles differ in health, speed, fire rate and abilities, so one shared policy has to serve very different jobs, or each agent needs its own.
 
-### Local Observation $o_i^t \in [-1, 1]^{166}$ vs Privileged Global State $s^t$
+---
 
-To support direct Stage 2 $\to$ Stage 3/4 transfer without tensor reshaping, every agent across all stages receives a fixed `166`-dimensional `float32` observation vector (`129` in v2.1; blocks 6 to 8 were added in v2.2, ADR-014). A dead agent observes all zeros:
-1. **Self-State (`14`)**: normalized $(x, y)$, normalized velocity $(v_x, v_y)$, HP ratio, fire cooldown, ability cooldown, alive flag, last fired weapon one-hot (3), class role one-hot (3).
-2. **Central Core State (`5`)**: relative $(\Delta x, \Delta y)$, normalized distance, Core HP ratio, Core under-attack flag (`0` in Stages 1–2).
-3. **Obstacle / Wall LIDAR (`8`)**: 8-direction raycast distances (`max_range = 480 px`) mapped into `[-1, 1]`.
-4. **Top-5 Visible Hostiles (`5 × 15 = 75`)**: relative $(\Delta x, \Delta y)$, $(\sin\theta, \cos\theta)$, normalized distance, enemy velocity $(v_x, v_y)$ for target leading, HP ratio, boss shield ratio, element one-hot (3), boss flag, marked debuff flag, active/LOS flag. In Stages 3–4 (`partial_obs=True`), enemies beyond `760 px` or occluded by cover blocks are masked out.
-5. **Teammates / Neutral Allies (`3 × 9 = 27`)**: relative $(\Delta x, \Delta y)$, distance, HP ratio, role/neutral one-hot (4), alive flag.
-6. **Incoming Enemy Projectiles (`4 × 7 = 28`, v2.2)**: the four projectiles within vision range that are closing on the agent, sorted by time to closest approach: relative $(\Delta x, \Delta y)$, velocity $(v_x, v_y)$, time to closest approach, miss distance at closest approach, active flag.
-7. **Status and Core Threat (`5`, v2.2)**: Vanguard shield timer, episode progress `step / max_steps`, unit direction to the enemy closest to the Core when one is within `300 px` of it, and a flag for that case.
-8. **Crosshair (`4`, v2.2)**: element one-hot of the visible enemy on the agent's current aim ray (the aim of its last action) and a flag.
+## 3.3 Arena and Entities
 
-During training, `env.state()` exposes the privileged noise-free global state $s^t$ containing all agent states (`N × 16`, with shield and respawn timers since v2.2), Core state (`5`), all active enemies up to `max_enemies` regardless of LOS occlusion (`E_max × 15`), up to 16 active enemy projectiles (`16 × 5`, v2.2), and global wave progress (`4`). Stage 3 has $|s^t| = 241$ and Stage 4 has $|s^t| = 287$.
+**Arena.** 1440 × 960 px with solid walls. Stages 1–2 place four 110 × 110 px pillars. Stages 3–4 place six blocks (four 120 × 80 px, two 80 × 120 px) around the Core. Every obstacle stops bullets and blocks line of sight. A bullet that hits an obstacle disappears without any penalty.
 
-### Decomposed Individual/Team Reward Function
+**Elements.** Water beats Fire, Grass beats Water, Fire beats Grass. A bullet of the counter element damages its target; any other element bounces off (`IMMUNE`) and deals no damage.
 
-Since the Milestone 3 performance fix (ADR-013), Stages 3–4 train on **one shared team reward** (`reward_mode: team`): every agent, alive or dead, receives
+**Agent classes** (`ROLE_SPECS`):
 
-$$r^t = \frac{1}{N}\sum_{i=1}^{N} r_{i,\text{indiv}}^t + r_{\text{team}}^t ,$$
+| Class | HP | Speed (px/tick) | Radius | Fire cooldown (ticks) | Bullet damage | Bullet speed | Ability cooldown |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Striker | 100 | 4.8 | 16 | 12 | 34 | 13.5 | – |
+| Vanguard | 180 | 3.5 | 20 | 16 | 28 | 11.5 | 140 |
+| Support | 115 | 4.3 | 16 | 14 | 24 | 12.5 | 120 |
 
-so the individual combat terms stay in the signal and a single centralized critic sees one reward. The earlier per-agent mixing with parameter $\alpha \in [0, 1]$ remains available as an ablation (`reward_mode: mixed`):
+**Abilities (Stage 4 only).** Choosing the hold-fire weapon action triggers the class ability when it is off cooldown and useful:
 
-$$r_i^t = (1 - \alpha) r_{i,\text{indiv}}^t + \alpha r_{\text{team}}^t$$
+- *Vanguard, Aegis.* Needs an enemy within 380 px or an enemy projectile within 320 px. For 90 ticks the Vanguard takes 35% of incoming damage and pulls every enemy within 420 px toward itself.
+- *Support, Pulse.* Needs a damaged Core or teammate, or an enemy within 440 px. Heals the Core by 26 HP (if within 420 px) and every teammate within 400 px by 22 HP, and marks the two nearest enemies for 150 ticks. A marked enemy takes 35% more damage, and killing it counts as a combo kill.
+- *Striker.* No ability; holding fire just holds fire.
 
-- **$r_{i,\text{indiv}}^t$**: rewards correct hits, precision target-leading hits, solo kills, Vanguard damage absorption, Support heal/mark utility, and smooth forward-hemisphere aim alignment; penalizes wrong-element shots, missed shots (`-0.04` flat penalty per miss), friendly fire, contact/projectile damage, proximity danger, and death.
-- **$r_{\text{team}}^t$**: rewards team eliminations, boss kills, shield breaks, multi-agent combo kills, wave clears, Core healing, and (v2.2) a victory bonus of `20 raw × Core HP ratio`; penalizes Core damage, Core destruction, and teammate deaths.
+**Enemies** (`Enemy`, base values before difficulty scaling):
 
-Each episode's `info["reward_components"]` holds every named term's contribution to the per-agent-mean return, so learning curves can be broken down by term.
+| Element | HP | Speed (px/tick) | Contact damage rate |
+| :--- | :---: | :---: | :---: |
+| Water | 95 | 2.00 | 18 |
+| Grass | 140 | 1.35 | 24 |
+| Fire | 72 | 2.75 | 15 |
 
-### DotShot v2.2 Rules (ADR-014)
+Enemies spawn on the arena edges at least 220 px from every agent and the Core. On Stages 3–4 half of them (even ids) walk straight to the Core; the others chase the nearest live agent, unless an active Aegis taunts them. From Stage 2 on, an enemy fires a 5.4 px/tick projectile at its target every 75–130 ticks when the target is within 560 px and in line of sight. Projectiles deal 10 damage (17 on Stage 4), 1.4× for bosses. Touching an agent or the Core deals continuous contact damage.
 
-| Rule | v2.1 | v2.2 |
+**Waves and difficulty.** Every 10 team kills starts a new wave. The difficulty factor grows by 0.14 per wave, up to 2.4. It shortens the spawn interval (never below 14 ticks) and raises the HP of new enemies by 12% and their speed by 6% per unit of difficulty above 1.
+
+**Bosses (Stages 3–4).** After 8 kills (7 on Stage 4) the next spawn is a boss: radius 28, 2.8× HP, 0.72× speed, 1.4× contact and projectile damage, plus a 110 HP elemental shield. Only counter-element hits damage the shield (at 1.15× damage). Breaking it opens a 160-tick window in which the boss takes 35% more damage and the class-specific shatter bonus applies.
+
+**Neutral allies (Stage 2).** Up to two unarmed 50 HP units walk across the arena. They block bullets.
+
+**Core (Stages 3–4).** A structure of radius 38 px in the centre. If its HP reaches zero the episode ends in defeat.
+
+**Respawn (Stages 3–4).** A dead agent stays out for 150 ticks and then returns at its starting position with full health. Its observation is all zeros while it is dead.
+
+---
+
+## 3.4 Action Space
+
+Every agent acts in `MultiDiscrete([3, 3, 32, 4])`:
+
+| Branch | Values | Meaning |
 | :--- | :--- | :--- |
-| Agent death (Stages 3–4) | Permanent; all agents dead ends the episode | Respawn at the spawn point after `150` ticks; only Core destruction ends the episode early |
-| Reaching `max_steps` | Truncation (`win = 1`), no bonus | Terminal victory with `+20 raw × Core HP ratio` (Stages 3–4); Stages 1–2 unchanged |
-| Aim shaping | Every tick, toward the current position of the nearest visible enemy | Only on ticks where a shot is fired, toward the lead point of the priority threat |
-| Element choice | Rewarded only on impact | Also `+1.5 raw` (counter element) or `−0.75 raw` (wrong element) at fire time when the shot's ray has a target; zero-mean for a random weapon |
-| Bullets in flight per target | 1 | 2 |
-| Decision interval (all stages) | 1 tick | 8 ticks: an action is held for 8 ticks and the rewards are summed (ADR-015) |
-| Stage 4 enemy projectile damage | 10 (boss 14) | 17 (boss 23.8), calibrated in §4.5.4 of the experiment log |
+| `a[0]` | 0, 1, 2 | horizontal move: left, none, right |
+| `a[1]` | 0, 1, 2 | vertical move: up, none, down |
+| `a[2]` | 0 … 31 | aim direction in 11.25° steps |
+| `a[3]` | 0, 1, 2, 3 | hold fire (Stage 4: use ability), fire Water, fire Grass, fire Fire |
 
-Calibration target: the scripted reference policy `heuristic_calibrated` must win at least 70% of Stage 3 and 60% of Stage 4 episodes, while `noop`, `random` and `charge` win none.
-
-### Reward Shaping v2.1 and Throughput Optimization
-
-Milestone 2 introduces **Reward Shaping v2.1** (`src/dotshot/core/engine.py`, `src/dotshot/core/rewards.py`) and vectorization optimizations (`src/benchmarks/marl/vec_marl_env.py`) to remove early exploration deadlocks and speed up multi-seed sweeps on Windows:
-
-| Component | v2.0 Baseline | v2.1 Upgrade | Measured Impact |
-| :--- | :--- | :--- | :--- |
-| **Aim Alignment Shaping** | Step cliff (`best_dot > 0.90` binary threshold) | Smooth quadratic cosine `(best_dot ** 2) * 0.25` across `best_dot > 0` | Provides dense angular gradient across all `32` aim bins (`11.25°`) |
-| **Hold-Fire (`a[3] == 0`)** | Awarded passive trigger-discipline points | Triggers Stage 4 class tactical ability only (hold-fire farming removed) | Prevents pacifist policies from gaming survival/hold-fire rewards |
-| **Miss & Combat Signals** | Escalating episode miss penalty, lower hit/kill scale | Flat `-0.04` miss penalty (`r_indiv_raw`) with boosted hit (`2.2`) and kill (`5.0`) signals | Encourages active engagement while keeping spray-and-pray unprofitable |
-| **LOS Obstacle Cache** | Filtered `obstacles` per raycast query | Pre-cached `_los_obstacles` tuple on engine init | Single-env throughput reaches `24,388 steps/sec` |
-| **MARL Vectorization** | `SubprocMARLEnv` (`vec_type="subproc"`, `~470 FPS` on Windows) | `DummyMARLEnv` (`vec_type="dummy"`, `2,349 env_steps/sec` on Windows) | Eliminates Windows `spawn` pipe IPC overhead (`5.0×` speedup) |
+Diagonal moves are normalised to the class speed. A shot leaves only when the fire cooldown has expired and fewer than two of the agent's own bullets are already flying toward the enemy on the aim ray. All learners keep the four branches as separate categorical heads; the joint log-probability is the sum over branches.
 
 ---
 
-## 3.4 Heterogeneous Squad Classes (Stage 4)
+## 3.5 Local Observation $o_i$ (166 values)
 
-| Class | Max HP | Speed | Bullet Damage | Cooldown (Fire / Ability) | Tactical Ability (`a[3] == 0`) |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **Vanguard** | `180` | `3.5` | `28` | `16 / 140` | Activates **Aegis Shield** (90 ticks, 65% damage mitigation, pulls enemy aggro within `420 px`) |
-| **Striker** | `100` | `4.8` | `34` | `12 / 90` | High-mobility DPS (`+35%` bonus damage against shattered boss shields) |
-| **Support** | `115` | `4.3` | `24` | `14 / 120` | Emits **Repair & Mark Pulse** (`+26` Core HP, `+22` ally HP, marks 2 enemies for `+35%` team damage) |
+Each agent sees a vector in $[-1, 1]^{166}$ built from its own point of view. On Stages 3–4 only enemies within 760 px and in line of sight appear. Positions are relative to the agent and normalised by the arena size; empty slots are zero.
+
+| Block | Size | Contents |
+| :--- | :---: | :--- |
+| 1. Self | 14 | position, velocity, HP, fire cooldown, ability cooldown, alive flag, last weapon (one-hot 3), class (one-hot 3) |
+| 2. Core | 5 | direction and distance to the Core, Core HP, under-attack flag |
+| 3. LIDAR | 8 | distance to walls and obstacles along 8 rays (range 480 px) |
+| 4. Enemies | 5 × 15 | the 5 nearest visible enemies: relative position, bearing (sin, cos), distance, velocity, HP, shield, element (one-hot 3), boss flag, marked flag, present flag |
+| 5. Teammates | 3 × 9 | the 3 nearest teammates or neutral allies: relative position, distance, HP, type (one-hot 4: Striker, Vanguard, Support, neutral), alive flag |
+| 6. Projectiles | 4 × 7 | the 4 approaching enemy projectiles with the earliest closest approach: relative position, velocity, time to closest approach, miss distance, present flag |
+| 7. Status | 5 | own Aegis timer, episode progress, direction to the enemy nearest the Core (if one is within 300 px of it), flag |
+| 8. Crosshair | 4 | element (one-hot 3) of the visible enemy on the current aim ray, target flag |
+
+Blocks 6–8 are new in v2.2. Without block 6 an agent could not dodge, because enemy bullets were invisible to it. Block 8 tells the agent which element it is pointing at, so element choice can be read off the input instead of being inferred from the enemy list.
+
+## 3.6 Global State $s$ (centralised critics only)
+
+Centralised critics (HARL's EP critic and MAT's value head) receive a noise-free state of size `16 n + 5 + 15 · max_enemies + 80 + 4`: 241 on Stage 3 and 287 on Stage 4.
+
+| Block | Size | Contents |
+| :--- | :---: | :--- |
+| Agents | 16 per agent | absolute position, velocity, HP, cooldowns, alive flag, last weapon, class, Aegis timer, respawn timer |
+| Core | 5 | position, HP, under-attack flag, alive flag |
+| Enemies | 15 per slot | every enemy, sorted by distance to the centre: position, velocity, distance, HP, shield, element, boss, marked, counter element, shield-broken flag, present |
+| Projectiles | 16 × 5 | position, direction and present flag of up to 16 enemy projectiles |
+| Globals | 4 | wave, enemy count, boss present, episode progress |
 
 ---
 
-## 3.5 Renderer Architecture and MARL Explainability Overlay
+## 3.7 Reward
 
-Physics in `src/dotshot/core/` never imports `pygame`. When `scripts/enjoy.py` or video recording attaches `DotShotPygameRenderer`, pre-cached radial glow sprites and static background surfaces sustain 60 FPS at `1440×960`. Pressing `Tab` toggles the **MARL Explainability Overlay**, rendering 8-ray LIDAR ticks, aim lasers, and live `MAT`/`PMAT` execution priority badges (`#1`, `#2`, `#3`) directly over the arena.
+The reward is a sum of named terms divided by 10. Each decision sums the rewards of its 8 ticks. Individual terms come from what one agent did; team terms from what happened to the team. Evaluations log every term separately (`rc_*` metrics), so any change in return can be traced to the terms that caused it.
+
+### Individual terms (per agent, raw units before ÷10)
+
+| Term | Weight | Paid when |
+| :--- | ---: | :--- |
+| `hits_correct` | +2.2 | per counter-element hit |
+| `precision_hits` | +0.8 | per counter-element hit fired within about 28° of the lead point |
+| `kills` | +5.0 | per kill |
+| `boss_kills` | +10.0 | per boss kill |
+| `shield_breaks` | +4.5 | per boss shield broken |
+| `combo_kills` | +5.0 | per kill on an enemy damaged by two agents, marked, or with a broken shield |
+| `aim_shaping` | +0.20 · cos² θ | per shot, θ = angle between the aim and the lead point of the priority threat (only when cos θ > 0) |
+| `fire_element_credit` | +1.5 / −0.75 | per shot at an enemy on the aim ray: counter element / any other element |
+| `shield_absorbed` | +0.05 | per HP absorbed by Aegis |
+| `heal_utility` | +0.05 | per HP healed by Pulse |
+| `mark_utility` | +0.8 | per enemy newly marked |
+| `survival` | +0.015 | per tick alive |
+| `hits_wrong` | −0.20 | per wrong-element hit |
+| `missed_bullets` | −0.04 | per badly aimed bullet that leaves the arena |
+| `ally_hits` / `ally_kills` | −2.0 / −5.0 | per neutral ally hit / killed (Stage 2) |
+| `damage_taken` | −0.20 | per HP lost |
+| `proximity_danger` | −0.15 × danger | per tick; danger grows linearly as enemies come within 140 px |
+| `wall_bump` | −0.02 | per tick spent pushing into a wall |
+| `death` | −5.0 | on death |
+
+### Team terms (raw units before ÷10)
+
+| Term | Weight | Paid when |
+| :--- | ---: | :--- |
+| `team_kills` | +2.5 | per enemy killed by anyone |
+| `team_boss_kills` | +8.0 | per boss killed |
+| `team_shield_breaks` | +3.5 | per boss shield broken |
+| `team_combo_kills` | +4.0 | per combo kill |
+| `team_wave_cleared` | +6.0 | when a new wave starts |
+| `team_core_healed` | +0.04 | per Core HP healed |
+| `team_core_alive` | +0.02 | per tick the Core stands |
+| `team_core_damage` | −0.08 | per Core HP lost |
+| `team_core_destroyed` | −12.0 | when the Core falls |
+| `team_agent_died` | −3.0 | on any tick an agent dies |
+| `team_win_bonus` | +20 × Core HP fraction | on reaching the episode limit with the Core alive |
+
+### How the terms are combined
+
+- **Stages 1–2** (one agent): $r = r_\text{indiv} / 10$. Team terms are not used.
+- **Stages 3–4** (`reward_mode: team`): every agent, alive or dead, receives the same reward
+  $$r^t = \frac{1}{n}\sum_{i=1}^{n} r^t_{i,\text{indiv}} + r^t_\text{team}.$$
+  HAPPO and HATRPO assume a single shared reward, and a centralised critic on the global state can only predict a reward that does not depend on which agent is asking. The older per-agent mix $r_i = (1-\alpha)\,r_{i,\text{indiv}} + \alpha\,r_\text{team}$ remains available as `reward_mode: mixed` for ablations.
+
+### Why the shaping terms look the way they do
+
+Three shaping terms were redesigned in v2.2 after they were caught teaching the wrong thing.
+
+- **Aim shaping is paid only on firing ticks.** In v2.1 it was paid every tick for pointing at the current position of the nearest enemy, whether or not the agent fired. In the Phase 1 gate run it out-paid correct hits 3.6 to 1, so a learner could collect it without ever shooting well. It now rewards a shot aimed where the most urgent enemy *will be*: the lead point of the enemy closest to the Core when one is within 300 px of it, otherwise of the nearest visible enemy.
+- **The element credit has zero mean.** Paying it at fire time gives the weapon branch an immediate signal; otherwise it only learns from hits that land many ticks later. A symmetric ±0.6 version taught agents to hold fire (40% of actions), because a shot with an uncertain element had negative expected value. With +c for the counter element and −c/2 otherwise, a uniformly random weapon earns exactly zero in expectation (one right element out of three), so the term teaches element choice without discouraging fire.
+- **Misses into pillars are free.** Only bullets that leave the arena unaimed are penalised.
+
+An optional potential-based guard term (`guard_potential_coef`, off by default) adds $\gamma\,\Phi(s') - \Phi(s)$, with $\Phi$ the negative mean distance of live agents to the Core. Potential-based shaping leaves the optimal policy unchanged [@ng1999shaping]. It did not speed up learning in our tests (§4.4) and is not used in any reported run.
 
 ---
 
-## 3.6 Visual Gallery Across Curriculum Stages
+## 3.8 Episode End and Victory
 
-All four screenshots below were captured deterministically at `1440×960` using headless `SDL_VIDEODRIVER=dummy` rendering (`scripts/capture_screenshots.py`) with the `Tab` explainability overlay enabled.
+- **Stages 1–2.** The episode ends when the agent dies (terminated) or at the tick limit (truncated). Reaching the limit alive counts as a win.
+- **Stages 3–4.** The episode ends early only when the Core is destroyed. Reaching the tick limit with the Core alive is a **terminal victory** that pays the win bonus. It is a terminal step rather than a time-limit truncation because HARL drops the reward of truncated steps.
 
-### Stage 1: Single-Agent Cover Combat
-![Stage 1 Cover Combat](assets/screenshots/stage1_cover_combat.png)
+### Why v2.2 changed these rules
 
-*Caption: Stage 1 solo arena (`Step 340/1500`, `Score 400`, `Kills 4`). The white circular `Striker` (`A0`) fires blue `Water` projectiles along a cyan aim laser toward approaching orange `Fire` triangles, while four square beveled pillars define cover corridors and 8-direction blue LIDAR rays track obstacle distances.*
+In v2.1 an episode on Stages 3–4 also ended when every agent was dead, and the Core-damage penalties stopped with it. A scripted policy that walked into the nearest enemy and never fired (`charge`) therefore scored better than standing still or acting at random, and better than every learner of the first Milestone 3 run. Dying fast was the best strategy available to a team that had not yet learned to shoot. With respawn, only the Core's death ends an episode, so a team that dies keeps losing Core HP until it learns to defend. `charge` is now the worst baseline on both stages (§4.2).
 
-**Dec-POMDP Link**: Stage 1 isolates core motor control—combining `11.25°` aim discretization, velocity-based target leading, and obstacle collision avoidance—before multi-element switching or partial observability enter the task.
+---
 
-### Stage 2: Elemental Mastery and Friendly-Fire Avoidance
-![Stage 2 Elemental Mastery](assets/screenshots/stage2_elemental_mastery.png)
+## 3.9 Difficulty Calibration
 
-*Caption: Stage 2 solo arena (`Step 620/1800`, `Score 950`, `Kills 9`). The `Striker` switches to a green `Grass` laser and fires a `Grass` projectile at a blue `Water` circle while dodging incoming orange enemy shots, tracking an orange `Fire` triangle and a green `Grass` square near cover, and holding fire around an unarmed white neutral ally.*
+The difficulty was set so that a strong scripted policy wins most, but not all, episodes. `heuristic_calibrated` (`benchmarks/runners/run_marl_baselines.py`) dodges incoming projectiles, holds a 240 px guard ring around the Core, leads its shots, picks the counter element and uses the Stage 4 abilities. Parameters were changed one at a time and scored on 32–96 `val` episodes (`docs/results/dev/calibration_log.jsonl`). With the v2.1 settings this script won every Stage 4 episode with 84% Core HP left, so Stage 4 enemy projectiles now deal 17 damage instead of 10. Stage 3 kept its settings.
 
-**Dec-POMDP Link**: Wrong-element hits deal zero hull damage (`IMMUNE`) and trigger negative reward, while hitting a neutral ally incurs a friendly-fire penalty. The policy must condition weapon selection (`a[3]`) on enemy element one-hots and distinguish hostile silhouettes from neutral teammates.
+At the final settings and `action_repeat = 8`, on 96 held-out `test` episodes, the script wins 78.1% of Stage 3 episodes and 75.0% of Stage 4 episodes, while `noop`, `random` and `charge` win none.
 
-### Stage 3: Cooperative Core Defense and Boss Shield Break
-![Stage 3 Cooperative Core Defense and Boss Overlay](assets/screenshots/stage3_coop_boss_overlay.png)
+---
 
-*Caption: Stage 3 two-agent cooperative arena (`Step 890/2000`, `Core 415/500`, `Kills 16`). Two `Striker` units (`#1` and `#2` gold priority badges linked by a purple coordination line) defend the pulsing Central Energy Core across six cover blocks. Agent `#1` shatters a `Water` Boss shield with green `Grass` fire (`SHIELD BREAK!`), while `#2` intercepts an orange `Fire` triangle and a green `Grass` square flanks behind the lower-right block.*
+## 3.10 Behaviour Audit
 
-**Dec-POMDP Link**: Because the six cover blocks mask Line-of-Sight (LOS) rays and enemy range cuts off at `760 px`, the lower-right `Grass` enemy is hidden from `#1` (`partial_obs=True`). Effective defense requires decentralized actors to split coverage around the Core and focus fire during the `160`-tick post-break vulnerability window.
+Every evaluation also records how the policy behaves, because a high return can hide a degenerate strategy:
 
-### Stage 4: Heterogeneous Squad Specialization
-![Stage 4 Heterogeneous Squad](assets/screenshots/stage4_heterogeneous_squad.png)
+| Metric | Meaning |
+| :--- | :--- |
+| `hold_frac` | share of live-agent ticks spent holding fire |
+| `move_frac` | share of live-agent ticks spent moving |
+| `shots_per_100` | shots fired per 100 live-agent ticks |
+| `deaths` | deaths per episode |
+| `core_dist` | mean distance to the Core (Stages 3–4) |
 
-*Caption: Stage 4 three-agent heterogeneous arena (`Step 1320/2200`, `Core 460/550`, `Kills 27`). Agent `#1` (`Vanguard`, blue circle with cyan Aegis ring) tanks incoming fire near the west flank; `#2` (`Support`, green circle) triggers an expanding green `PULSE` ring healing the Core and allies while marking enemies with yellow target rings; `#3` (`Striker`, white circle) finishes a marked `Fire` Boss with blue `Water` shots (`COMBO KILL!`).*
+`scripts/monitor_runs.py` flags a run as `IDLE` (moves less than 15% of the time), `NOFIRE` (holds fire more than 80% of the time, or fires less than once per 100 ticks), `SUICIDE` (more than 3 deaths per agent per 1,000 ticks) or `ELEM<33` (elemental accuracy at or below chance). Every reported policy was checked against these flags.
 
-**Dec-POMDP Link**: Asymmetric cooldowns, speeds, and hold-fire (`a[3] == 0`) tactical abilities create sharp role differentiation. Conditioning every agent on a single parameter-shared actor (`MAPPO`) creates policy interference across tanking, healing, and DPS actions—motivating role-aware (`RoMAT`) and sequential heterogeneous (`HAPPO`/`HATRPO`) updates.
+---
+
+## 3.11 Renderer
+
+The physics never imports Pygame. `DotShotPygameRenderer` draws an engine state at 1440 × 960 and can run headless (`SDL_VIDEODRIVER=dummy`) for videos and screenshots. `Tab` toggles an overlay with LIDAR rays and aim lines. `scripts/enjoy.py` plays any stage by hand or replays a trained policy, and `scripts/capture_screenshots.py` regenerates the gallery below.
+
+### Stage 1
+![Stage 1](assets/screenshots/stage1_cover_combat.png)
+
+### Stage 2
+![Stage 2](assets/screenshots/stage2_elemental_mastery.png)
+
+### Stage 3
+![Stage 3](assets/screenshots/stage3_coop_boss_overlay.png)
+
+### Stage 4
+![Stage 4](assets/screenshots/stage4_heterogeneous_squad.png)

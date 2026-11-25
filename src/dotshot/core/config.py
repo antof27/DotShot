@@ -123,11 +123,11 @@ class StageConfig:
     vision_range: float = 780.0
     partial_obs: bool = False
     reward_alpha: float = 0.5
-    # "team": one shared team reward for every agent (CTDE default, ADR-013);
+    # "team": one shared team reward for every agent (CTDE default, ADR-005);
     # "mixed": per-agent (1 - alpha) * indiv + alpha * team (ablation only).
     reward_mode: str = "mixed"
     aim_bins: int = 32
-    # v2.2 (ADR-014). Zero/neutral defaults keep Stages 1-2 single-life.
+    # v2.2 (ADR-006). Zero/neutral defaults keep Stages 1-2 single-life.
     respawn_ticks: int = 0  # >0: dead agents respawn near the core; all-dead no longer ends the episode
     win_bonus: float = 0.0  # raw team reward x Core HP ratio for reaching max_steps with the Core alive
     victory_terminal: bool = False  # reaching max_steps is a terminal victory, not a time-limit truncation
@@ -136,7 +136,7 @@ class StageConfig:
     core_contact_mult: float = 0.045
     max_bullets_per_target: int = 2  # own bullets in flight toward one enemy
     fire_element_credit: float = 1.5  # raw reward at fire time: +c for the counter element, -c/2 for a wrong one
-    action_repeat: int = 8  # ticks per decision; the action is held and rewards summed (ADR-015)
+    action_repeat: int = 8  # ticks per decision; the action is held and rewards summed (ADR-007)
     guard_potential_coef: float = 0.0  # raw; >0 adds potential-based shaping toward the Core (team mode)
     shaping_gamma: float = 0.99  # must equal the learner's per-decision discount
     aim_shaping_anneal_steps: int = 0  # >0: aim shaping decays linearly to 0 over this many env steps

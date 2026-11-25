@@ -1,8 +1,0 @@
-# Stage 3 baselines under the pre-fix v2.1 reward (per-agent alpha mixing),
-# i.e. the conditions of the Milestone 3 benchmark.
-stage: 3
-policies: [random, noop, charge, heuristic_nearest, heuristic_core_guard]
-n_episodes: 32
-split: test
-seed: 0
-reward_mode: mixed

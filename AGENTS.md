@@ -29,14 +29,14 @@ DotShot Game evolves incrementally. No feature or experiment is complete until b
 
 - Execute all Python commands using the project Windows CUDA virtual environment (`.\.venv\Scripts\python.exe`). Never rely on global system Python for project runs.
 - Drive every training and evaluation run from a versioned YAML config under `configs/` with explicit deterministic seeds (`random`, `numpy`, `torch`, Gymnasium/PettingZoo).
-- Preserve legacy v1 files under `legacy_v1/` (`legacy_v1/env/`, `legacy_v1/marl/`, etc.) untouched unless explicitly asked to remove or migrate them, so v1-to-v2 comparisons remain verifiable.
+- Keep `third_party/` (pinned HARL and MAT) unmodified. Patch upstream behaviour from `src/benchmarks/official/` and pin each patch with a test.
 
 ## 5. Git Workflow and Safety
 
 - Never commit directly to `main`. Develop on `dev` or dedicated `feat/*` / `fix/*` branches.
 - Push every verified phase branch and `dev` merge to `origin` (`git push`) so multi-device progress stays synchronized on GitHub.
 - Never run `git reset --hard`, `git clean -fd`, or `git push --force` without explicit user confirmation.
-- Keep binary model weights (`*.pt`, `*.zip`), Optuna databases (`*.db`), and raw TensorBoard logs (`tb_log/`, `runs/`) out of Git; commit only curated summary metrics, generated plots (`docs/assets/figures/`), and selected gameplay clips (`docs/assets/videos/`).
+- Keep binary model weights (`*.pt`, `*.zip`), Optuna storage (`*.db`, `*.journal`), and raw TensorBoard logs (`tb_log/`, `runs/`) out of Git; commit only curated summary metrics, generated plots (`docs/assets/figures/`), and selected gameplay clips (`docs/assets/videos/`).
 
 ## 6. Upstream Notelia Collaboration
 
@@ -48,12 +48,9 @@ DotShot Game evolves incrementally. No feature or experiment is complete until b
 ## Navigation Index
 
 ### Agent Planning Docs (`.agents/docs/`)
-- [PRE_PRD.md](.agents/docs/PRE_PRD.md): Codebase v1 audit, workstation baseline, design decisions, risks, and non-goals.
-- [PRD.md](.agents/docs/PRD.md): Functional and non-functional requirements (`FR-*`, `NFR-*`) and acceptance criteria.
-- [IMPLEMENTATION_PLAN.md](.agents/docs/IMPLEMENTATION_PLAN.md): Phased execution blueprint across Milestones M0 through M3.
-- [ARCHITECTURE.md](.agents/docs/ARCHITECTURE.md): System topology, tensor schemas, network blueprints, and artifact layout.
-- [DECISIONS.md](.agents/docs/DECISIONS.md): Architectural Decision Records (`ADR-001` through `ADR-009`).
-- [ROADMAP.md](.agents/docs/ROADMAP.md): Living milestone and parity tracker across Simulator, Benchmarks, Handbook, and Notelia.
+- [ARCHITECTURE.md](.agents/docs/ARCHITECTURE.md): Package layout, tensor schemas, learner adapters, and the run artifact format.
+- [DECISIONS.md](.agents/docs/DECISIONS.md): Architectural Decision Records that still hold.
+- [ROADMAP.md](.agents/docs/ROADMAP.md): Status of the simulator, the benchmark suite and the documentation.
 
 ### Workspace Skills (`.agents/skills/`) and Global Skills
 - [opencode-workers](file:///C:/Users/anton/.gemini/config/skills/opencode-workers/SKILL.md) (global): Orchestrator-worker delegation via `opencode run` or fast `flash` subagents to conserve Gemini orchestrator tokens.
