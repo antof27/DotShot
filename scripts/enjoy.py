@@ -72,11 +72,13 @@ def run_manual(stage: int) -> None:
         env.close()
 
 
-def run_replay(run_dir: str, which: str, seed: int, record: str | None, frame_skip: int, fps: int) -> None:
+def run_replay(run_dir: str, which: str, seed: int, record: str | None, frame_skip: int, fps: int,
+               snapshots: str | None = None, snap_ticks: tuple = ()) -> None:
     from benchmarks.eval.marl_eval import episode_seeds
     from benchmarks.official.load_policy import load_policy
 
-    if record:
+    offscreen = bool(record or snapshots)
+    if offscreen:
         os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
     policy, env_kwargs = load_policy(run_dir, which)
     stage = int(env_kwargs["stage"])
@@ -86,12 +88,13 @@ def run_replay(run_dir: str, which: str, seed: int, record: str | None, frame_sk
     kwargs = {k: v for k, v in env_kwargs.items() if k not in ("stage", "env_overrides") and v is not None}
     multi = stage >= 3
     env = (DotShotParallelEnv if multi else DotShotSingleEnv)(
-        stage=stage, render_mode="rgb_array" if record else "human", env_overrides=overrides, **kwargs
+        stage=stage, render_mode="rgb_array" if offscreen else "human", env_overrides=overrides, **kwargs
     )
     ep_seed = episode_seeds("test", seed + 1)[seed]  # the seed-th held-out test episode
     obs, _ = env.reset(seed=ep_seed)
     policy.reset(env)
     frames, action, t = [], None, 0
+    pending, seen = {}, set()  # callout text -> tick to save; texts already saved
     try:
         while True:
             if t % repeat == 0:
@@ -102,10 +105,22 @@ def run_replay(run_dir: str, which: str, seed: int, record: str | None, frame_sk
             else:
                 obs, _, term, trunc, info = env.step(action)
                 done = term or trunc
+            if snapshots:
+                for ev in env.engine.visual_events:
+                    text = ev.get("text")
+                    if ev.get("type") == "callout" and text and text not in seen and text not in pending:
+                        pending[text] = t + 4  # a few ticks later the effect is fully drawn
+            frame = env.render() if (record and t % frame_skip == 0) or snapshots else None
             if record and t % frame_skip == 0:
-                frames.append(env.render())
-            elif not record and env._renderer and env._renderer.quit_requested:
+                frames.append(frame)
+            elif not offscreen and env._renderer and env._renderer.quit_requested:
                 break
+            if snapshots:
+                due = [k for k, v in pending.items() if v == t] + ([f"tick{t}"] if t in snap_ticks else [])
+                for name in due:
+                    _save_png(frame, snapshots, name)
+                    seen.add(name)
+                    pending.pop(name, None)
             t += 1
             if done:
                 break
@@ -121,6 +136,15 @@ def run_replay(run_dir: str, which: str, seed: int, record: str | None, frame_sk
         print(f"saved {len(frames)} frames to {record}")
 
 
+def _save_png(frame, folder: str, name: str) -> None:
+    import imageio.v2 as imageio
+
+    os.makedirs(folder, exist_ok=True)
+    slug = "".join(c.lower() if c.isalnum() else "_" for c in name).strip("_")
+    imageio.imwrite(os.path.join(folder, f"{slug}.png"), frame)
+    print(f"snapshot {name} -> {folder}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--stage", type=int, choices=[1, 2, 3, 4], help="stage for --manual")
@@ -131,11 +155,14 @@ def main() -> None:
     parser.add_argument("--record", help="write an MP4 or GIF instead of opening a window")
     parser.add_argument("--frame-skip", type=int, default=2, help="record every n-th tick")
     parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--snapshots", help="folder for PNGs of the first SHIELD BREAK, AEGIS, PULSE, COMBO KILL")
+    parser.add_argument("--snap-ticks", default="", help="extra ticks to capture, e.g. 400,1500")
     args = parser.parse_args()
     if args.manual and args.stage:
         run_manual(args.stage)
     elif args.run:
-        run_replay(args.run, args.which, args.episode, args.record, args.frame_skip, args.fps)
+        ticks = tuple(int(x) for x in args.snap_ticks.split(",") if x)
+        run_replay(args.run, args.which, args.episode, args.record, args.frame_skip, args.fps, args.snapshots, ticks)
     else:
         parser.error("use --manual --stage N, or --run RUN_DIR")
 
