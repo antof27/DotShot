@@ -37,7 +37,7 @@ Almost every modern cooperative MARL algorithm falls into one of five CTDE famil
 2. **Centralized-Critic Policy Gradients** (`MADDPG`, `COMA`, `MA-POCA`)
 3. **On-Policy CTDE Actor-Critic** (`IPPO`, `MAPPO`)
 4. **Heterogeneous Trust-Region & Mirror Learning** (`HATRPO`, `HAPPO`, `HARL`)
-5. **Autoregressive Sequence Modeling** (`MAT`, `PMAT`, `RoMAT`)
+5. **Autoregressive Sequence Modeling** (`MAT`)
 
 ---
 
@@ -125,7 +125,7 @@ $$M^{i_{1:m}}(s, \mathbf{a}) = \prod_{j=1}^{m-1} \frac{\pi_{\bar{\theta}^{i_j}}^
 
 ---
 
-## 2.6 MARL as Sequence Modeling: MAT, PMAT, and RoMAT
+## 2.6 MARL as Sequence Modeling: MAT
 
 Examining the Multi-Agent Advantage Decomposition Lemma closely led **Wen et al. (2022)** [@wen2022mat] to a striking architectural bridge: if optimal joint policy search reduces to sequential per-agent decisions $a^{i_1} \to a^{i_2} \to \dots \to a^{i_n}$ conditioned on prior actions, then cooperative MARL is naturally an **encoder-decoder sequence modeling problem**.
 
@@ -142,12 +142,10 @@ flowchart LR
 ```
 
 - **MAT (Multi-Agent Transformer)** [@wen2022mat]: The Transformer encoder attends across all agents' observations $(o^1, \dots, o^n)$, producing contextual representations and value estimates. During training (or centralized rollout), the causal decoder generates each agent's action sequentially along a fixed order $[0, 1, \dots, n-1]$ conditioned on preceding agents' chosen actions. Because sequence length equals $n$ agents rather than $|\mathcal{A}|^n$, complexity scales linearly in $n$ while inheriting monotonic improvement from the advantage decomposition theorem.
-- **PMAT (Prioritized MAT)**: Fixed ordering $[0, 1, \dots, n-1]$ can be suboptimal when the frontline tank or initiator should commit *before* the DPS or support unit reacts. PMAT introduces a lightweight priority network trained to sample a dynamic permutation via **Plackett-Luce** ranking so the highest-impact agent commits first on each step.
-- **RoMAT (Role-based MAT)**: Injects learnable per-agent role embeddings into the encoder tokens so asymmetric squads (`Vanguard`, `Striker`, `Support`) preserve class specialization within a shared Transformer backbone.
 
 > [!NOTE]
 > **Wait: Does MAT Violate Decentralized Execution?**
-> In MAT's strict centralized execution variant, agents coordinate sequentially through the decoder. To preserve decentralized execution where required, MAT-Dec restricts execution attention or distills the sequential policy into independent decentralized actors; in DotShot's simulator, we benchmark `MAT`/`PMAT`/`RoMAT` directly against fully decentralized `IPPO`, `QMIX`, `MAPPO`, and `HAPPO` to quantify the exact gain from explicit sequential action coordination.
+> In MAT's strict centralized execution variant, agents coordinate sequentially through the decoder. To preserve decentralized execution where required, MAT-Dec restricts execution attention or distills the sequential policy into independent decentralized actors; in DotShot we benchmark `MAT` against the decentralized actors of `MAPPO`, `HAPPO`, `HATRPO` and `HAA2C`, which measures what explicit sequential action coordination is worth on this task.
 
 ---
 
@@ -161,7 +159,7 @@ flowchart LR
 | **COMA** [@foerster2018coma] | On-policy AC | Small Discrete | Shared | Policy gradient local | Explicit counterfactual credit assignment | Slow / noisy on large factored action spaces |
 | **MAPPO** [@yu2022mappo] | On-policy CTDE AC | Discrete, Continuous, MultiDiscrete | Usually shared | Empirical stability only | Strong homogeneous baseline with ValueNorm | Struggles with asymmetric heterogeneous classes |
 | **HAPPO / HATRPO** [@kuba2022happo; @zhong2024harl] | On-policy Sequential CTDE | Discrete, Continuous, MultiDiscrete | **No** (separate $\theta^i$) | **Yes** (Advantage Decomposition) | Handles heterogeneous squads without sharing | Higher memory/compute scaling linearly in $n$ |
-| **MAT / PMAT / RoMAT** [@wen2022mat] | On-policy Sequence Model | Discrete, Continuous, MultiDiscrete | Shared Transformer + Role Emb | **Yes** (Sequential decoding) | Explicit action-to-action coordination in $O(n)$ | Requires centralized joint forward pass at step time unless distilled |
+| **MAT** [@wen2022mat] | On-policy Sequence Model | Discrete, Continuous, MultiDiscrete | Shared Transformer | **Yes** (Sequential decoding) | Explicit action-to-action coordination in $O(n)$ | Requires centralized joint forward pass at step time unless distilled |
 
 ---
 
