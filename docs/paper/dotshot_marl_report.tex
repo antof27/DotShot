@@ -29,7 +29,7 @@ Cooperative multi-agent reinforcement learning (MARL) studies how agents that ea
 
 DotShot is a 2D arena shooter built to test cooperative learners one difficulty at a time. Agents move, aim in 32 directions and fire one of three elemental weapons; a weapon only damages enemies of the element it counters. Four stages build on each other. Stage 1 teaches aiming and moving with a single agent and a single enemy element. Stage 2 adds all three elements, enemies that shoot back and neutral allies that must not be hit. Stage 3 asks two agents to defend a central Core under partial observability against waves that include shielded bosses. Stage 4 replaces the two identical agents with a heterogeneous squad: a tank, a damage dealer and a healer.
 
-This report describes the simulator in its current version (v2.2), the learners we train on it, and the results. It also describes how we got there, because the first round of results was wrong. An audit found bugs in how the upstream learners were connected to the simulator, a reward loophole that made dying the best strategy, and a tuning protocol that selected noise. Fixing them took more than fixing code: the simulator itself had to change before any learner could make progress on the cooperative stages. We document those steps, the experiments behind each decision and the checks we use to make sure that a high return reflects real play rather than an exploited reward.
+This report describes the simulator in its current version (v2.2), the learners we train on it, and the results. It also describes how we got there, because the first round of results was wrong. An audit found bugs in how the upstream learners were connected to the simulator, a reward loophole that made dying the best strategy, and a tuning protocol that selected noise. Fixing the code was not enough; the simulator also had to change before any learner made progress on the cooperative stages. We document those steps and the experiment behind each decision, together with the behaviour checks we use to confirm that a high return comes from playing the game.
 
 The contributions are:
 \begin{enumerate}
@@ -55,7 +55,7 @@ Large policy steps shift the state distribution faster than the critic can follo
 \begin{equation}
 \mathcal{L}^{\text{CLIP}}(\theta) = \mathbb{E}_t \!\left[ \min\!\left( \rho_t(\theta) \hat{A}_t, \; \text{clip}(\rho_t(\theta), 1 - \epsilon, 1 + \epsilon) \hat{A}_t \right) \right].
 \end{equation}
-The ratio is the quantity that the first HARL integration got wrong (Section~\ref{sec:pipeline}): with four action branches, PPO must clip the ratio of the joint action, $\rho = \prod_{k=1}^{4} \rho^{(k)}$, not that product raised to the fourth power.
+The ratio is the quantity that the first HARL integration got wrong (Section~\ref{sec:pipeline}): with four action branches, PPO must clip the ratio of the joint action, $\rho = \prod_{k=1}^{4} \rho^{(k)}$, and the first integration clipped $\rho^4$.
 
 \subsection{Cooperative Dec-POMDPs}
 
@@ -166,7 +166,7 @@ Reward & individual & individual & shared team & shared team \\
 
 \paragraph{Enemies.} Water, Grass and Fire enemies differ in health (95, 140, 72 HP), speed (2.0, 1.35, 2.75 px/tick) and contact damage. On Stages 3--4 half of them walk to the Core and the rest chase the nearest agent. From Stage 2 on they fire at targets within 560 px in line of sight every 75--130 ticks. Every 10 team kills starts a new wave, which raises enemy health, speed and spawn rate. A boss has 2.8 times the health, deals 1.4 times the damage and carries a 110 HP elemental shield that only counter-element hits can break; a broken shield leaves the boss open to 35\% extra damage for 160 ticks.
 
-\paragraph{Respawn and victory.} On Stages 3--4 a dead agent returns at its starting position after 150 ticks. Only the destruction of the Core ends an episode early. Reaching the tick limit with the Core alive is a terminal victory that pays a team bonus of $20 \times$ the remaining Core HP fraction (raw units). The step is terminal rather than a time-limit truncation because HARL discards the reward of truncated steps.
+\paragraph{Respawn and victory.} On Stages 3--4 a dead agent returns at its starting position after 150 ticks. Only the destruction of the Core ends an episode early. Reaching the tick limit with the Core alive is a terminal victory that pays a team bonus of $20 \times$ the remaining Core HP fraction (raw units). The step is marked terminal because HARL discards the reward of steps marked as truncated.
 
 \subsection{Actions, Observations and State}
 
@@ -325,7 +325,7 @@ Stage & Policy & Return [95\% CI] & Win & Kills & Core HP & Elem.\ acc. & Move &
 \section{How the Benchmark Became Learnable}
 \label{sec:dev}
 
-This section summarises the development experiments that led to the final setup. They are single runs or short multi-seed checks, reported to justify design decisions, not as benchmark results. The detailed records are in the experiment log of the handbook.
+This section summarises the development experiments that led to the final setup. They are single runs or short multi-seed checks. We report them because each one justifies a design decision; the benchmark results follow in Section~ef{sec:results}, and the detailed records are in the experiment log of the handbook.
 
 \subsection{The First Results and the Suicide Trap}
 
@@ -335,7 +335,7 @@ The environment had a deeper problem. In DotShot v2.1, a Stage 3--4 episode also
 
 \subsection{Fixing the Learners Was Not Enough}
 
-With every fix of Table~\ref{tab:defects} in place, HARL-MAPPO trained on the v2.1 rules for 2M ticks on 5 seeds returned $-2.37\;[-2.74, -2.01]$ with 0.78 kills per episode, against a planned acceptance gate of at least 3 kills. Its reward breakdown showed why. Aim shaping, then paid every tick for pointing at the current position of the nearest enemy, earned $+1.28$ per episode, 3.6 times the reward for correct hits; elemental accuracy stayed at chance; the policy entropy stayed close to its maximum. The learner was being paid for pointing, not for shooting well.
+With every fix of Table~\ref{tab:defects} in place, HARL-MAPPO trained on the v2.1 rules for 2M ticks on 5 seeds returned $-2.37\;[-2.74, -2.01]$ with 0.78 kills per episode, against a planned acceptance gate of at least 3 kills. Its reward breakdown showed why. Aim shaping, then paid every tick for pointing at the current position of the nearest enemy, earned $+1.28$ per episode, 3.6 times the reward for correct hits; elemental accuracy stayed at chance; the policy entropy stayed close to its maximum. The learner earned more for pointing at enemies than for hitting them.
 
 \subsection{DotShot v2.2}
 
@@ -343,7 +343,7 @@ DotShot v2.2 addressed these problems in the environment: respawn and terminal v
 
 Two of these changes were themselves revised after diagnostics. A first element credit of $\pm 0.6$ had a negative expected value for an uncertain shot, and the trained policy held fire on 40\% of its actions while hitting with the wrong element three times as often as with the right one. The asymmetric $+c / -c/2$ form removed that incentive. At $c = 0.6$, however, Stage 2 PPO still fired Water on 74\% of its shots whatever the target, so the crosshair block was added and $c$ was raised to 1.5. The first v2.2 HARL adapter also ended the episode whenever all agents happened to be dead at once, which brought the suicide trap back inside HARL training; dead agents are now never all reported done before the episode ends.
 
-A second 5-seed gate on v2.2 (at one decision per tick) improved the return to $-1.64\;[-1.98, -1.23]$ but still averaged only 1.84 kills: the learners were improving slowly, not failing.
+A second 5-seed gate on v2.2 (at one decision per tick) improved the return to $-1.64\;[-1.98, -1.23]$ but still averaged only 1.84 kills. Validation kills were still rising on every seed when the learning rate decayed to zero.
 
 \subsection{One Decision Every Eight Ticks}
 \label{sec:dev-repeat}
@@ -401,7 +401,7 @@ Stage & Run & Return [95\% CI] & Win & Kills & Right element & Deaths & Moving \
 
 Table~\ref{tab:results-stage12} and Figure~\ref{fig:results-stage12} show the single-agent results. Stage 1 is solved: every seed wins all of its test episodes without dying. On Stage 2, starting from the Stage 1 policy doubles the return and the kills, and lifts the share of correct-element hits from 77.8\% to 91.6\%. The Stage 1 network already knows how to move and aim, so only the weapon choice has to be learned.
 
-The transferred policy wins fewer episodes, though: 78.1\% against 93.1\%. It is more aggressive. It moves 98\% of the time, engages more enemies at once and dies three times as often (0.22 against 0.07 deaths per episode); two of its five seeds win only 56--66\% of their episodes. The reward pays more for kills than for survival, and PPO follows it. This is a property of the reward, not a failure of the learner, and it is worth keeping in mind when a single number is used to rank policies.
+The transferred policy wins fewer episodes, though: 78.1\% against 93.1\%. It is more aggressive. It moves 98\% of the time, engages more enemies at once and dies three times as often (0.22 against 0.07 deaths per episode); two of its five seeds win only 56--66\% of their episodes. The reward pays more for kills than for survival, and PPO follows it. A ranking by return alone would hide this trade-off.
 
 Shaping does not explain the gains. Aim shaping and the element credit together make up about a third of the transferred policy's return ($2.6 + 12.2$ of $44.2$). Both grow only with useful shots: the credit has zero expectation for a random weapon, and correct hits ($+15.3$) and kills ($+9.4$) rise in the same proportion. The agents fire 8.2 shots per 100 ticks, close to the Striker's maximum of 8.3.
 
@@ -482,7 +482,7 @@ Figure~\ref{fig:results-stage3-components} splits the return by reward group. Co
 
 Three things stand out. First, the cloned-start policies defend from closer in than the script that taught them: all of them stay inside the ring of cover blocks, 86--111 px from the Core on average, while the script keeps 126 px. A tighter ring is shorter for two agents to cover, which may be why RL moved them inward. Second, they lose the Core the same way the script does, slowly and steadily. In Figure~\ref{fig:behaviour-stage3-core} every cloned-start curve tracks the script's, and wins are decided in the last fifth of the episode by whether the Core still has HP. Third, element choice is solved: the HAA2C policy picks the counter element for 93--98\% of the enemies under its aim and never holds fire with a target in its sights, and even the scratch MAPPO policy picks it 80--86\% of the time.
 
-The scratch policies fail at positioning rather than at shooting. Their position maps spread along diagonal corridors toward the arena edge, where they meet enemies early, and the Core, left alone, falls by the middle of the episode.
+The scratch policies shoot reasonably well but position badly. Their position maps spread along diagonal corridors toward the arena edge, where they meet enemies early, and the Core, left alone, falls by the middle of the episode.
 
 \begin{figure}[t]
 \centering
