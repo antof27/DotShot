@@ -562,7 +562,23 @@ The screenshots in Figure~\ref{fig:shots-stage4} show the squad's main strength 
 \section{Discussion and Limitations}
 \label{sec:discussion}
 
-% DISCUSSION: written from the final results.
+\paragraph{What the benchmark measures.} DotShot separates three skills that are easy to conflate in a single return. Aiming and moving are learned quickly: PPO solves Stage 1 in 4M ticks. Choosing the element is a credit-assignment problem that the fire-time credit, the crosshair observation and the Stage 1 policy make tractable, and by Stage 3 every learner, from scratch or not, chooses correctly for most targets. Defending a shared objective under partial observability is the hard part. From random weights, none of the learners we tried learned it within 16M ticks; a single 24M-tick run began to.
+
+\paragraph{The environment mattered more than the learner.} The largest gains in this project came from changes to the task. Removing the incentive to die, paying for aim only when the agent fires, giving the element credit a zero mean and letting agents decide every 8 ticks turned a benchmark on which every learner stayed at random level into one on which tuned learners beat a hand-written expert. Each of them followed a measurement, a reward breakdown, a behaviour probe or an A/B run, listed in Section~\ref{sec:dev}. Looking at behaviour was the most useful habit. The audit caught a frozen clone, a probe revealed the hold-fire incentive of the first element credit, and the suicide trap surfaced when a scripted policy that never fires beat every learner. A return curve alone would have shown all three as slow learning.
+
+\paragraph{Algorithms.} Three observations hold across both cooperative stages. First, demonstrations dominate: cloning a scripted expert and fine-tuning with RL reaches or exceeds the expert in 4M ticks on every learner, while training from scratch for four times as long stays far below. Second, parameter sharing helps more than the guarantees of sequential updates: MAPPO and MAT led both scratch pilots, and MAPPO led the heterogeneous stage, where HAPPO and HATRPO were expected to have the advantage. Third, the differences between learners are modest once the start is good. On Stage 3 all five cloned-start learners end within 6 points of each other; on Stage 4 the spread is larger (92 to 108) and the order is stable across seeds.
+
+\paragraph{Limitations.} This is a proof of concept on one workstation, and several choices bound what the results can claim.
+\begin{itemize}
+    \item \textbf{Budgets.} Cloned-start runs use the 4M-tick budget at which they were tuned; scratch runs stop at 16M ticks while their curves are still rising. The comparison between scratch learners is therefore a comparison of early learning speed, not of final performance.
+    \item \textbf{Selection.} Only the two learners that led each scratch pilot were scaled. The pilot used 2 seeds and validation episodes, and the other three learners may overtake them at larger budgets.
+    \item \textbf{Tuning.} Stage 4 studies were stopped at 16 trials instead of 24. Scratch hyperparameters were not tuned, because the search could not rank them at its budget; all scratch runs share one standard configuration. Stage 2 transfer trials were effectively single-seed because of a seeding bug that was fixed before the final runs.
+    \item \textbf{Statistics.} Five seeds give wide intervals on win rates; differences of a few points between learners are within noise, as the overlapping intervals show.
+    \item \textbf{The expert.} The demonstrations come from one scripted policy. The cloned-start results show how much RL adds on top of that policy, which says little about learning from weaker demonstrations or from none.
+    \item \textbf{MAT at execution time.} MAT decodes the agents' actions one after another from all observations, so it is not a decentralized policy; the HARL learners are.
+\end{itemize}
+
+\paragraph{Next steps.} The scratch curves call for longer runs (24M ticks and beyond) and for a curriculum that carries the Stage 2 policy into the cooperative stages, as Stage 1 carried into Stage 2. A study of demonstration quality, cloning from the weaker heuristics of Table~\ref{tab:baselines}, would show how much of the cloned-start advantage depends on the expert. Finally, the failure mode visible in the screenshots, the whole team converging on one fight while the Core is attacked from another side, suggests a reward or observation that makes undefended approaches to the Core visible to every agent.
 
 \bibliographystyle{plainnat}
 \bibliography{../references}
