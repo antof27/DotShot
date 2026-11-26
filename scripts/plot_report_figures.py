@@ -221,8 +221,212 @@ def fig_final_single() -> None:
     _save(fig, "final_stage12_curves")
 
 
+def _marl_groups(stage: int):
+    """{(learner, kind): [seed dirs]} for the final Stage 3-4 runs; kind is 'bc' or 'scratch'."""
+    out = {}
+    for cfg in sorted((RUNS / f"final/stage{stage}").glob(f"s{stage}_*")):
+        seeds = _seeds(cfg)
+        if seeds:
+            out[(learner_name(cfg.name), "scratch" if "scratch" in cfg.name else "bc")] = seeds
+    return out
+
+
+def _baseline(stage: int, name: str):
+    p = RUNS / f"baselines_v22k8/stage{stage}/summary.json"
+    if not p.exists():
+        return None
+    return json.loads(p.read_text())["results"][name]["metrics"]
+
+
+def fig_final_marl(stage: int) -> None:
+    groups = _marl_groups(stage)
+    if not groups:
+        return
+    script = _baseline(stage, "heuristic_calibrated")
+    fig, axes = plt.subplots(1, 2, figsize=(7.4, 2.9), gridspec_kw={"width_ratios": [1, 1.6]})
+    for (name, kind), dirs in groups.items():
+        ax = axes[0] if kind == "bc" else axes[1]
+        xs, m, lo, hi = _band(dirs)
+        ax.plot(xs, m, color=COLOR[name], ls="-" if kind == "bc" else "--", label=f"{name} (n={len(dirs)})")
+        ax.fill_between(xs, lo, hi, color=COLOR[name], alpha=0.15, lw=0)
+    for ax, title in zip(axes, ("Started from the cloned script", "From scratch")):
+        if script:
+            ax.axhline(script["eval/return_mean"], color=SCRIPT, ls=(0, (4, 3)), lw=1.1)
+        ax.set_title(title, loc="left")
+        ax.set_xlabel("Ticks (millions)")
+        ax.legend(frameon=False, loc="lower right", fontsize=7.5)
+    axes[0].set_ylabel("Validation return")
+    if script:
+        axes[1].text(axes[1].get_xlim()[1], script["eval/return_mean"], " script", va="center", color=MUTED, fontsize=7.5)
+    fig.subplots_adjust(wspace=0.22)
+    _save(fig, f"final_stage{stage}_curves")
+
+    # test return and win rate per configuration, mean and 95% CI over seeds
+    summary = RES / f"final_stage{stage}.json"
+    if not summary.exists():
+        return
+    data = json.loads(summary.read_text())
+    rows = sorted(data["learners"].items(), key=lambda kv: kv[1]["return_mean"]["mean"])
+    fig, axes = plt.subplots(1, 2, figsize=(7.4, 0.34 * len(rows) + 1.0), sharey=True)
+    for i, (key, row) in enumerate(rows):
+        name, kind = learner_name(key), ("scratch" if "scratch" in key else "cloned start")
+        for ax, metric, scale in ((axes[0], "return_mean", 1), (axes[1], "win_rate", 100)):
+            st = row[metric]
+            ax.errorbar(st["mean"] * scale, i, xerr=[[(st["mean"] - st["mean_ci_low"]) * scale],
+                                                    [(st["mean_ci_high"] - st["mean"]) * scale]],
+                        fmt="o" if kind != "scratch" else "s", color=COLOR[name], ms=5, capsize=2, lw=1.4,
+                        mfc=COLOR[name] if kind != "scratch" else "white")
+    labels = [f"{learner_name(k)}, {'scratch' if 'scratch' in k else 'cloned start'}" for k, _ in rows]
+    axes[0].set_yticks(range(len(rows)), labels)
+    for ax, metric, scale, xl in ((axes[0], "return_mean", 1, "Test return"), (axes[1], "win_rate", 100, "Test win rate (%)")):
+        for bname, ls in (("heuristic_calibrated", (0, (4, 3))), ("noop", ":")):
+            b = data["baselines"].get(bname)
+            if b:
+                ax.axvline(b[metric]["mean"] * scale, color=SCRIPT, ls=ls, lw=1.0)
+        ax.set_xlabel(xl)
+        ax.grid(axis="y", visible=False)
+    axes[0].text(data["baselines"]["heuristic_calibrated"]["return_mean"]["mean"], len(rows) - 0.4, "script",
+                 ha="center", color=MUTED, fontsize=7.5)
+    axes[0].text(data["baselines"]["noop"]["return_mean"]["mean"], len(rows) - 0.4, "noop", ha="center",
+                 color=MUTED, fontsize=7.5)
+    fig.subplots_adjust(wspace=0.06)
+    _save(fig, f"final_stage{stage}_scores")
+
+
+COMPONENT_GROUPS = {
+    "combat": ["hits_correct", "precision_hits", "kills", "boss_kills", "shield_breaks", "combo_kills",
+               "team_kills", "team_boss_kills", "team_shield_breaks", "team_combo_kills", "team_wave_cleared"],
+    "shaping": ["aim_shaping", "fire_element_credit"],
+    "support": ["shield_absorbed", "heal_utility", "mark_utility", "team_core_healed"],
+    "survival and victory": ["survival", "team_core_alive", "team_win_bonus"],
+    "penalties": ["hits_wrong", "missed_bullets", "ally_hits", "ally_kills", "damage_taken", "proximity_danger",
+                  "wall_bump", "death", "team_core_damage", "team_core_destroyed", "team_agent_died"],
+}
+GROUP_COLOR = {"combat": "#2a78d6", "shaping": "#eda100", "support": "#1baf7a", "survival and victory": "#6250d6",
+               "penalties": "#e34948"}
+
+
+def fig_components(stage: int) -> None:
+    groups = _marl_groups(stage)
+    if not groups:
+        return
+    rows = []
+    for (name, kind), dirs in sorted(groups.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        tests = [[json.loads(l) for l in (d / "metrics.jsonl").read_text().splitlines() if "test/return_mean" in l][-1]
+                 for d in dirs]
+        comp = {g: np.mean([sum(t.get(f"test/rc_{k}", 0.0) for k in keys) for t in tests])
+                for g, keys in COMPONENT_GROUPS.items()}
+        rows.append((f"{name}, {'scratch' if kind == 'scratch' else 'cloned'}", comp))
+    script = _baseline(stage, "heuristic_calibrated")
+    if script:
+        rows.append(("scripted reference", {g: sum(script.get(f"eval/rc_{k}", 0.0) for k in keys)
+                                            for g, keys in COMPONENT_GROUPS.items()}))
+    fig, ax = plt.subplots(figsize=(7.4, 0.36 * len(rows) + 1.1))
+    used = [g for g in COMPONENT_GROUPS if any(abs(c[g]) > 0.05 for _, c in rows)]
+    for i, (label, comp) in enumerate(rows):
+        pos, neg = 0.0, 0.0
+        for g in used:
+            v = comp[g]
+            left = pos if v >= 0 else neg + v
+            ax.barh(i, abs(v), left=left, color=GROUP_COLOR[g], height=0.62, edgecolor="white", linewidth=1.0,
+                    label=g if i == 0 else None)
+            if v >= 0:
+                pos += v
+            else:
+                neg += v
+        ax.text(pos + 1, i, f"{sum(comp.values()):.1f}", va="center", fontsize=7.5, color=INK)
+    ax.axvline(0, color=MUTED, lw=0.8)
+    ax.set_yticks(range(len(rows)), [r[0] for r in rows])
+    ax.set_xlabel("Mean test return by reward group (net total at the right)")
+    ax.grid(axis="y", visible=False)
+    ax.legend(frameon=False, ncol=5, loc="lower center", bbox_to_anchor=(0.45, 1.0), fontsize=7.5)
+    _save(fig, f"final_stage{stage}_components")
+
+
+def fig_behaviour(stage: int) -> None:
+    beh = RES / "behaviour"
+    files = sorted(beh.glob(f"s{stage}_*.json"))
+    if not files:
+        return
+    data = {f.stem: json.loads(f.read_text()) for f in files}
+    order = sorted(data, key=lambda k: (k != f"s{stage}_script", "scratch" in k, k))
+
+    def label(k):
+        return "scripted reference" if k.endswith("_script") else \
+            f"{learner_name(k)}, {'scratch' if 'scratch' in k else 'cloned'}"
+
+    # occupancy: all agents of a team summed; arena drawn to scale with its obstacles and the Core
+    from matplotlib.colors import PowerNorm
+    from matplotlib.patches import Circle, Rectangle
+
+    from dotshot.core.config import get_stage_config
+
+    cfg = get_stage_config(stage)
+    n = len(order)
+    ncols = min(4, n)
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(1.85 * ncols, 1.45 * nrows))
+    axes = np.atleast_1d(axes).ravel()
+    for ax in axes[n:]:
+        ax.axis("off")
+    for ax, k in zip(axes, order):
+        h = np.array(data[k]["heatmap"]).sum(0)
+        ax.imshow(h / h.sum(), cmap="Blues", origin="upper", extent=(0, cfg.width, cfg.height, 0),
+                  norm=PowerNorm(0.45, vmin=0, vmax=(h / h.sum()).max()))
+        for o in cfg.obstacles:
+            ax.add_patch(Rectangle((o.x, o.y), o.w, o.h, fill=False, ec=MUTED, lw=0.7))
+        ax.add_patch(Circle((cfg.width / 2, cfg.height / 2), 38, fc="#e34948", ec="white", lw=0.6))
+        ax.set_xlim(0, cfg.width), ax.set_ylim(cfg.height, 0)
+        ax.set_title(label(k), fontsize=7.5)
+        ax.set_xticks([]), ax.set_yticks([])
+        ax.grid(False)
+        for s in ax.spines.values():
+            s.set_visible(True), s.set_color(GRID)
+    fig.subplots_adjust(wspace=0.05, hspace=0.25)
+    _save(fig, f"behaviour_stage{stage}_heatmaps")
+
+    # Core HP over the episode, and weapon choice given the target element (cloned vs scratch)
+    cloned = [k for k in order if not k.endswith("_script") and "scratch" not in k]
+    scratch = [k for k in order if "scratch" in k]
+    picks = [x for x in (cloned[:1] + scratch[:1]) if x]
+    fig, axes = plt.subplots(1, 1 + len(picks), figsize=(7.6, 2.6),
+                             gridspec_kw={"width_ratios": [1.35] + [1] * len(picks)})
+    for k in order:
+        d = data[k]
+        m = np.array(d["core_hp_curve"]["mean"]) * 100
+        xs = np.arange(1, len(m) + 1) / len(m) * 100
+        name = learner_name(k) if not k.endswith("_script") else None
+        axes[0].plot(xs, m, color=COLOR.get(name, SCRIPT), ls="--" if ("scratch" in k or name is None) else "-",
+                     lw=1.6 if name else 1.2, label=label(k))
+    axes[0].set_xlabel("Episode progress (%)")
+    axes[0].set_ylabel("Core HP (%), 16 episodes")
+    axes[0].legend(handles=[plt.Line2D([], [], color=SCRIPT, ls="--", lw=1.2, label="scripted reference"),
+                            plt.Line2D([], [], color=MUTED, lw=1.6, label="cloned start (learner colour)"),
+                            plt.Line2D([], [], color=MUTED, ls="--", lw=1.6, label="scratch (learner colour)")],
+                   frameon=False, fontsize=6.5, loc="lower left")
+    for ax, pick in zip(axes[1:], picks):
+        conf = np.array(data[pick]["confusion"]).sum(0)
+        shares = conf / np.maximum(conf.sum(1, keepdims=True), 1) * 100
+        ax.imshow(shares, cmap="Blues", vmin=0, vmax=100)
+        ax.set_xticks(range(4), ["hold", "W", "G", "F"])
+        ax.set_yticks(range(3), ["Water", "Grass", "Fire"])
+        ax.set_xlabel("Weapon chosen")
+        ax.grid(False)
+        for i in range(3):
+            for j in range(4):
+                ax.text(j, i, f"{shares[i, j]:.0f}", ha="center", va="center", fontsize=7,
+                        color="white" if shares[i, j] > 55 else INK)
+        ax.set_title(label(pick), loc="left", fontsize=8)
+    axes[1].set_ylabel("Enemy on the aim ray")
+    fig.subplots_adjust(wspace=0.55)
+    _save(fig, f"behaviour_stage{stage}_core_weapons")
+
+
 FIGURES = {"learnability": fig_learnability, "action_repeat": fig_action_repeat, "tuning": fig_tuning,
-           "final_single": fig_final_single}
+           "final_single": fig_final_single,
+           "final_marl": lambda: [fig_final_marl(s) for s in (3, 4)],
+           "components": lambda: [fig_components(s) for s in (3, 4)],
+           "behaviour": lambda: [fig_behaviour(s) for s in (3, 4)]}
 
 
 def main() -> None:

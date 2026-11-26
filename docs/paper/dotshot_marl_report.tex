@@ -405,7 +405,96 @@ The transferred policy wins fewer episodes, though: 78.1\% against 93.1\%. It is
 
 Shaping does not explain the gains. Aim shaping and the element credit together make up about a third of the transferred policy's return ($2.6 + 12.2$ of $44.2$). Both grow only with useful shots: the credit has zero expectation for a random weapon, and correct hits ($+15.3$) and kills ($+9.4$) rise in the same proportion. The agents fire 8.2 shots per 100 ticks, close to the Striker's maximum of 8.3.
 
-% RESULTS: Stages 3-4 (warm-started rows, scratch pilot and scaled scratch rows), behaviour analysis, screenshots.
+\subsection{Stage 3: Two Strikers Defending the Core}
+\label{sec:results-stage3}
+
+On Stages 3--4 every learner is trained twice. Runs started from the cloned script get 4M ticks of RL with their tuned configuration. Runs from scratch use one standard configuration for all learners, because the search could not rank scratch configurations at its 4M-tick budget. A scratch pilot (2 seeds, 8M ticks) ranks the five learners on validation episodes, and only the two best are trained for 16M ticks on the 5 evaluation seeds. On Stage 3 the pilot's mean final validation returns were 5.03 for MAT, 4.18 for MAPPO, 0.74 for HAA2C, $-0.03$ for HAPPO and $-1.56$ for HATRPO.
+
+\begin{table}[t]
+\centering
+\caption{Stage 3 results (5 seeds, 32 test episodes each). Cloned rows: 4M ticks of RL after behaviour cloning; scratch rows: 16M ticks. The scripted reference is scored on 96 test episodes.}
+\label{tab:results-stage3}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+Run & Return [95\% CI] & Win & Kills & Right element & Core HP & Deaths & Moving \\
+\midrule
+HAA2C, cloned & $\mathbf{84.87}\;[82.48, 87.26]$ & 63.1\% & 37.5 & 91.4\% & 21.4\% & 1.1 & 76\% \\
+MAT, cloned & $84.31\;[82.02, 87.08]$ & 63.1\% & 35.9 & 90.0\% & 17.8\% & 0.4 & 58\% \\
+MAPPO, cloned & $81.96\;[79.35, 84.99]$ & 61.3\% & 36.0 & 90.1\% & 19.5\% & 0.4 & 38\% \\
+HATRPO, cloned & $79.23\;[76.78, 81.77]$ & 61.3\% & 35.2 & 89.9\% & 21.4\% & 0.5 & 29\% \\
+HAPPO, cloned & $79.01\;[77.39, 80.54]$ & 56.9\% & 34.4 & 90.6\% & 17.9\% & 0.3 & 29\% \\
+\midrule
+MAPPO, scratch & $22.68\;[16.91, 28.83]$ & 1.2\% & 12.8 & 82.8\% & 0.3\% & 0.5 & 94\% \\
+MAT, scratch & $20.11\;[18.65, 21.78]$ & 0.0\% & 11.6 & 82.6\% & 0.0\% & 0.3 & 95\% \\
+\midrule
+scripted reference & $87.59\;[83.97, 91.15]$ & 78.1\% & 37.9 & 94.1\% & 21.1\% & 0.02 & 23\% \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage3_curves.png}
+\caption{Stage 3 validation curves (mean and 95\% bootstrap band over 5 seeds); the dashed line is the scripted reference's test return. Left: runs started from the cloned script stay flat for the first $\sim$0.5M ticks, while only the critic is trained, then climb from the clone's 55--62 to 80--87. HAPPO lags the others throughout. Right: from scratch, MAPPO and MAT follow almost the same curve and are still rising at 16M ticks.}
+\label{fig:results-stage3-curves}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage3_scores.png}
+\caption{Stage 3 test return and win rate per configuration (mean and 95\% bootstrap interval over 5 seeds). Filled circles: cloned start; open squares: scratch. Dashed line: scripted reference; dotted line: \texttt{noop}.}
+\label{fig:results-stage3-scores}
+\end{figure}
+
+Table~\ref{tab:results-stage3} and Figures~\ref{fig:results-stage3-curves} and~\ref{fig:results-stage3-scores} summarise Stage 3. All five learners improve substantially on the clone they start from, and all end within 9 points of the script. HAA2C and MAT lead, and their intervals do not overlap HAPPO's; the other differences are within seed noise. None of them reaches the script's win rate (57--63\% against 78\%), although the Core HP left at the end is the same. The learned teams fight as well as the script, but lose the Core slightly more often.
+
+HAA2C reaches the top return differently from the others. It moves 76\% of the time against 29--58\%, and dies 1.1 times per episode against 0.3--0.5. HAA2C has neither PPO's clipping nor a trust region, and its policy drifted furthest from the cautious clone; the extra kills pay for the extra deaths under this reward.
+
+From scratch, the picture is different. In the pilot only the two learners that share parameters across agents, MAPPO with one actor for both Strikers and MAT with one transformer, were clearly above zero at 8M ticks. HAPPO, HATRPO and HAA2C train one actor per agent, so each actor sees half of the data, and on a homogeneous team that halves the sample efficiency of the hardest part of learning. After 16M ticks MAPPO and MAT aim well and choose the right element 83\% of the time, but have not learned to defend the Core, which falls in almost every episode. The single 24M-tick run of Section~\ref{sec:dev-learn} reached a test return of 53, so the scratch curve keeps rising well beyond this budget.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage3_components.png}
+\caption{Where the Stage 3 return comes from: mean test return per reward group (Table~\ref{tab:reward}). Combat terms (hits, kills, bosses, combos, waves) dominate for every policy; shaping (aim and element credit) is about a fifth of the return of the cloned learners and of the script; penalties are mostly Core damage.}
+\label{fig:results-stage3-components}
+\end{figure}
+
+Figure~\ref{fig:results-stage3-components} splits the return by reward group. Combat terms dominate for every policy, and the shaping share (aim plus element credit, 17--18 of 79--85 points) matches the script's. The learned policies do not collect shaping that the script leaves on the table; they earn the same mix of rewards for the same behaviour.
+
+\paragraph{How the policies play.} For a closer look we replayed one representative run per configuration (the seed with the median test return) and the scripted reference on 16 test episodes, recording every agent's position, its distance to the Core, the weapon it chose and the element of the enemy under its aim at each decision, and the Core HP over time (Figures~\ref{fig:behaviour-stage3-maps} and~\ref{fig:behaviour-stage3-core}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/behaviour_stage3_heatmaps.png}
+\caption{Where the two Strikers spend their time on Stage 3 (16 test episodes per policy, both agents pooled, square-root colour scale). The red disc is the Core, the outlines are the six cover blocks. Every policy started from the cloned script stays inside the ring of cover, on average 86--111 px from the Core against 126 px for the script. The scratch policies drift along diagonal corridors after enemies.}
+\label{fig:behaviour-stage3-maps}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/behaviour_stage3_core_weapons.png}
+\caption{Left: Core HP over the episode, averaged over 16 test episodes (an episode that ended early keeps its final value). Even the scripted reference loses about four fifths of the Core over a full episode; the cloned-start policies follow the same slope, while the scratch policies lose the Core halfway through. Right: weapon chosen when an enemy of a given element is under the aim (rows sum to 100\%). The counter element is on the off-diagonal of this layout: Grass against Water, Fire against Grass, Water against Fire.}
+\label{fig:behaviour-stage3-core}
+\end{figure}
+
+Three things stand out. First, the cloned-start policies defend from closer in than the script that taught them: all of them stay inside the ring of cover blocks, 86--111 px from the Core on average, while the script keeps 126 px. A tighter ring is shorter for two agents to cover, which may be why RL moved them inward. Second, they lose the Core the same way the script does, slowly and steadily. In Figure~\ref{fig:behaviour-stage3-core} every cloned-start curve tracks the script's, and wins are decided in the last fifth of the episode by whether the Core still has HP. Third, element choice is solved: the HAA2C policy picks the counter element for 93--98\% of the enemies under its aim and never holds fire with a target in its sights, and even the scratch MAPPO policy picks it 80--86\% of the time.
+
+The scratch policies fail at positioning rather than at shooting. Their position maps spread along diagonal corridors toward the arena edge, where they meet enemies early, and the Core, left alone, falls by the middle of the episode.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/results/s3_mat_shield_break.jpg}
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/results/s3_mat_tick1200.jpg}
+\caption{Stage 3, MAT started from the cloned script (median seed), held-out test episode. Left, tick 634: the Strikers split the work. The one east of the Core breaks the shield of a Water boss with Grass shots (\textsc{shield break}), while the other, south of the Core, fires Fire at a Grass enemy approaching from the south-east. Right, tick 1200: both Strikers are low on health and press against the Core while a second Water boss, shield intact, closes in from the south-west with Grass enemies on three sides. The Core falls at tick 1437. This is the typical way the learned policies lose: they hold position well but cannot clear a late wave that arrives with a boss while they are weak.}
+\label{fig:shots-stage3}
+\end{figure}
+
+Figure~\ref{fig:shots-stage3} shows both sides of this in one episode. Early on, the two agents divide the arena between them without any explicit communication: each covers one side of the Core and picks the counter element of its own target. Later, when a boss arrives while both are weakened, staying close to the Core is no longer enough. Neither agent retreats, and the Core falls with both still beside it. Under this reward a retreat has no direct payoff, while a death costs the team 0.55 of reward and the agent 150 ticks out of play.
+
+% RESULTS: Stage 4 (cloned rows, scratch pilot and scaled scratch rows), behaviour analysis, screenshots.
 
 \section{Discussion and Limitations}
 \label{sec:discussion}

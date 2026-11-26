@@ -185,6 +185,29 @@ Scripted baselines on the same stages (one run each, 96 `test` episodes; `config
 - **Transfer wins fewer episodes (78.1% vs 93.1%).** The transferred agent is more aggressive: it moves 98% of the time, fights more enemies at once and dies 0.22 times per episode instead of 0.07. Two of its five seeds win 56–66% of episodes, the other three 84–94%. The return rewards kills more than survival, so PPO trades some survival for kills. The scratch agent wins more often because it engages less.
 - **No sign of reward hacking.** Aim shaping and the element credit together make up about a third of the return (Stage 2 transfer: 2.6 + 12.2 of 44.2). Both scale with useful shots: the credit is zero in expectation for a random weapon, and correct hits (+15.3) and kills (+9.4) grow in the same proportion. The agents fire 8.2 shots per 100 ticks, essentially the Striker's maximum of 8.3, and hold fire only 5–9% of the time.
 
+### 4.6.2 Stage 3 (two Strikers)
+
+Warm-started rows: actor cloned from `heuristic_calibrated`, 10 critic-only updates, then 4M ticks of RL with the tuned configuration. Scratch rows: standard hyperparameters (`configs/official/s3_*_scratch_std.yaml`), 16M ticks; only the two learners that led the pilot were scaled (below).
+
+| Run | Return [95% CI] | IQM | Win (%) | Kills / ep | Right element (%) | Core HP (%) | Deaths / ep | Move |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| HAA2C, cloned start | **84.87** [82.48, 87.26] | 84.99 | 63.1 | 37.5 | 91.4 | 21.4 | 1.1 | 0.76 |
+| MAT, cloned start | 84.31 [82.02, 87.08] | 83.97 | 63.1 | 35.9 | 90.0 | 17.8 | 0.4 | 0.58 |
+| MAPPO, cloned start | 81.96 [79.35, 84.99] | 81.54 | 61.3 | 36.0 | 90.1 | 19.5 | 0.4 | 0.38 |
+| HATRPO, cloned start | 79.23 [76.78, 81.77] | 79.08 | 61.3 | 35.2 | 89.9 | 21.4 | 0.5 | 0.29 |
+| HAPPO, cloned start | 79.01 [77.39, 80.54] | 79.06 | 56.9 | 34.4 | 90.6 | 17.9 | 0.3 | 0.29 |
+| MAPPO, scratch (16M ticks) | 22.68 [16.91, 28.83] | 21.41 | 1.2 | 12.8 | 82.8 | 0.3 | 0.5 | 0.94 |
+| MAT, scratch (16M ticks) | 20.11 [18.65, 21.78] | 20.07 | 0.0 | 11.6 | 82.6 | 0.0 | 0.3 | 0.95 |
+| *heuristic_calibrated* (96 ep.) | 87.59 [83.97, 91.15] | 92.19 | 78.1 | 37.9 | 94.1 | 21.1 | 0.02 | 0.23 |
+
+Scratch pilot (2 seeds, 8M ticks, mean final `val` return, the selection criterion): MAT 5.03, MAPPO 4.18, HAA2C 0.74, HAPPO −0.03, HATRPO −1.56 (`runs/pilot/stage3/selection.json`).
+
+- **Cloned starts end close to the script but below it.** All five learners improve on the clone (validation return 55–62 at the start of RL, 80–87 after 4M ticks) and land within 9 points of the script's return. HAA2C and MAT are ahead of HAPPO with non-overlapping intervals; the other differences are within noise. Every learner wins fewer episodes than the script (57–63% against 78%), with the same Core HP left at the end, so the gap is in how often the Core survives, not in how well the agents fight.
+- **HAA2C buys its return with risk.** It moves 76% of the time against 29–58% for the others and dies 1.1 times per episode against 0.3–0.5. Without PPO's clipping or a trust region, its policy drifted further from the cautious clone.
+- **From scratch, shared parameters learn first.** In the pilot the two learners with one network for both agents (MAPPO, and MAT's shared transformer) were the only ones clearly above zero at 8M ticks; HAPPO, HATRPO and HAA2C train one actor per agent and see half the data each. At 16M ticks MAPPO and MAT learned to aim and to choose the element (83% right) but not to hold the Core: it falls in nearly every episode. The 24M-tick development run (§4.4.5) reached a test return of 53, so the scratch curve keeps rising well past this budget.
+- **Shaping stays a minority of the return.** Aim shaping plus element credit contribute 17–18 of the 79–85 points of the cloned learners (about 20%), and the win bonus is small (0.4), because the Core rarely ends with much HP.
+
+
 ---
 
 ## 4.7 Reproducing
