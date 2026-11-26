@@ -422,7 +422,70 @@ def fig_behaviour(stage: int) -> None:
     _save(fig, f"behaviour_stage{stage}_core_weapons")
 
 
-FIGURES = {"learnability": fig_learnability, "action_repeat": fig_action_repeat, "tuning": fig_tuning,
+def fig_roles(stage: int = 4) -> None:
+    """Stage 4: per-role position maps (script vs the best cloned learner) and per-role statistics."""
+    beh = RES / "behaviour"
+    files = {f.stem: json.loads(f.read_text()) for f in sorted(beh.glob(f"s{stage}_*.json"))}
+    if f"s{stage}_script" not in files or len(files) < 2:
+        return
+    from matplotlib.colors import PowerNorm
+    from matplotlib.patches import Circle, Rectangle
+
+    from dotshot.core.config import get_stage_config
+
+    cfg = get_stage_config(stage)
+    final = json.loads((RES / f"final_stage{stage}.json").read_text())["learners"]
+    best = max((k for k in final if "scratch" not in k), key=lambda k: final[k]["return_mean"]["mean"])
+    pair = [(f"s{stage}_script", "scripted reference"), (best, f"{learner_name(best)}, cloned")]
+    roles = files[f"s{stage}_script"]["roles"]
+    fig, axes = plt.subplots(2, len(roles), figsize=(6.0, 2.9))
+    for r, (key, title) in enumerate(pair):
+        heat = np.array(files[key]["heatmap"])
+        for c, role in enumerate(roles):
+            ax = axes[r, c]
+            h = heat[c] / heat[c].sum()
+            ax.imshow(h, cmap="Blues", origin="upper", extent=(0, cfg.width, cfg.height, 0),
+                      norm=PowerNorm(0.45, vmin=0, vmax=h.max()))
+            for o in cfg.obstacles:
+                ax.add_patch(Rectangle((o.x, o.y), o.w, o.h, fill=False, ec=MUTED, lw=0.6))
+            ax.add_patch(Circle((cfg.width / 2, cfg.height / 2), 38, fc="#e34948", ec="white", lw=0.6))
+            ax.set_xlim(0, cfg.width), ax.set_ylim(cfg.height, 0)
+            ax.set_xticks([]), ax.set_yticks([])
+            ax.grid(False)
+            for s in ax.spines.values():
+                s.set_visible(True), s.set_color(GRID)
+            if r == 0:
+                ax.set_title(role, fontsize=8.5)
+            if c == 0:
+                ax.set_ylabel(title, fontsize=7.5)
+    fig.subplots_adjust(wspace=0.04, hspace=0.06)
+    _save(fig, f"behaviour_stage{stage}_roles_maps")
+
+    # per-role distance to the Core and ability uses per episode, every analysed policy
+    keys = [f"s{stage}_script"] + sorted(k for k in files if k != f"s{stage}_script")
+    labels = ["script" if k.endswith("_script") else
+              f"{learner_name(k)}{' (scratch)' if 'scratch' in k else ''}" for k in keys]
+    fig, axes = plt.subplots(1, 2, figsize=(7.4, 2.6))
+    # roles are a different entity from learners, so they take the palette's later slots
+    role_color = {"Vanguard": "#6250d6", "Striker": "#e34948", "Support": "#008300"}
+    for ax, metric, rset in ((axes[0], "dist", roles), (axes[1], "abil", [r for r in roles if r != "Striker"])):
+        width = 0.8 / len(rset)
+        for j, role in enumerate(rset):
+            idx = roles.index(role)
+            vals = [(files[k]["core_distance"]["mean"][idx] or 0) if metric == "dist"
+                    else files[k]["abilities_per_episode"][idx] for k in keys]
+            xs = np.arange(len(keys)) + (j - (len(rset) - 1) / 2) * width
+            ax.bar(xs, vals, width=width * 0.9, color=role_color[role], label=role)
+    for ax, yl in zip(axes, ("Mean distance to the Core (px)", "Ability uses per episode")):
+        ax.set_xticks(range(len(keys)), labels, rotation=30, ha="right", fontsize=7.5)
+        ax.set_ylabel(yl)
+        ax.grid(axis="x", visible=False)
+        ax.legend(frameon=False, fontsize=7.5, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 1.0))
+    fig.subplots_adjust(wspace=0.3)
+    _save(fig, f"behaviour_stage{stage}_roles_stats")
+
+
+FIGURES = {"roles": fig_roles, "learnability": fig_learnability, "action_repeat": fig_action_repeat, "tuning": fig_tuning,
            "final_single": fig_final_single,
            "final_marl": lambda: [fig_final_marl(s) for s in (3, 4)],
            "components": lambda: [fig_components(s) for s in (3, 4)],
