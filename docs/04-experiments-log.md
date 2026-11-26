@@ -49,7 +49,7 @@ HARL and SB3 run on the CPU; MAT runs on CUDA. At most 6 training processes run 
 
 `charge` (walk into the nearest enemy, never fire) is the worst policy on both stages, as intended (§4.3). `heuristic_core_guard` stands at the Core and wins more Stage 3 episodes than `heuristic_nearest` but kills less. `heuristic_calibrated` is the reference for the difficulty calibration and the teacher for behaviour cloning.
 
-<!-- STAGE12-BASELINES: random and heuristic on Stages 1-2, added with the final Stage 1-2 results. -->
+Stage 1–2 baselines are listed with the final results (§4.6.1).
 
 ---
 
@@ -177,7 +177,8 @@ All rows: 5 seeds (0–4), final policy, 32 `test` episodes per seed. Return: me
 | 2 | PPO from scratch | 22.46 [21.35, 23.29] | 22.78 | 93.1 | 8.6 | 77.8 | 0.07 | 0.86 | 0.05 |
 | 2 | PPO from the Stage 1 policy | **44.17** [42.46, 46.34] | 43.50 | 78.1 | **18.7** | **91.6** | 0.22 | 0.98 | 0.06 |
 
-<!-- STAGE12-BASELINES-ROWS -->
+Scripted baselines on the same stages (one run each, 96 `test` episodes; `configs/baselines/stage{1,2}_{random,heuristic}.yaml`): Stage 1 `random` −2.50 (0% wins), `heuristic` 46.04 (96.9% wins, 21.1 kills); Stage 2 `random` −2.25 (0% wins), `heuristic` 25.32 (0% wins, 11.2 kills, 98.0% right element, 873-tick episodes). The single-agent heuristic leads its target and picks the counter element but never dodges: on Stage 1, where enemies do not shoot, it slightly out-scores PPO; on Stage 2 it dies in every episode.
+
 
 - **Stage 1 is solved.** Every seed wins all 32 test episodes without dying, with 20 kills per episode. Since Stage 1 has only Fire enemies, 100% elemental accuracy is expected once the agent fires Water.
 - **Transfer doubles what the Stage 2 agent achieves**: twice the kills (18.7 vs 8.6), twice the return, and 91.6% instead of 77.8% right elements. The weapon head starts uniform after the reset, and the Stage 1 trunk already knows how to aim and move, so the agent only has to learn which element to load.
