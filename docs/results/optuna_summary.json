@@ -653,7 +653,7 @@
         "clip_range": 0.2,
         "gamma": 0.99,
         "gae_lambda": 0.95,
-        "init_model_path": "C:\\Users\\anton\\Documents\\dotshot-work\\RL\\RL-game1\\runs\\optuna\\s1_sb3_ppo\\trial_15\\seed_100\\checkpoints\\final.zip",
+        "init_model_path": "runs/optuna/s1_sb3_ppo/trial_15/seed_100/checkpoints/final.zip",
         "net_arch": [
           128,
           128

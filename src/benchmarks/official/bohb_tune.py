@@ -262,6 +262,16 @@ def run_study(name: str, args: argparse.Namespace) -> None:
 # ------------------------------------------------------------------------------ export
 
 
+def _portable(config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Checkpoint paths relative to the repository, so published summaries carry no local paths."""
+    if not config or "init_model_path" not in config:
+        return config
+    path = Path(config["init_model_path"])
+    if path.is_relative_to(_REPO):
+        path = path.relative_to(_REPO)
+    return {**config, "init_model_path": path.as_posix()}
+
+
 def _summary(study: optuna.Study) -> Dict[str, Any]:
     trials = sorted(study.trials, key=lambda t: t.number)
     complete = [t for t in trials if t.state == optuna.trial.TrialState.COMPLETE]
@@ -276,7 +286,7 @@ def _summary(study: optuna.Study) -> Dict[str, Any]:
         "best_value": float(best.value) if best else None,
         "best_trial": best.number if best else None,
         "best_params": dict(best.params) if best else {},
-        "best_config": best.user_attrs.get("config") if best else None,
+        "best_config": _portable(best.user_attrs.get("config")) if best else None,
         "n_complete": len(complete),
         "n_pruned": sum(1 for t in trials if t.state == optuna.trial.TrialState.PRUNED),
         "n_failed": sum(1 for t in trials if t.state == optuna.trial.TrialState.FAIL),

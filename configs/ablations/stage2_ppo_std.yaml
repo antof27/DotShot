@@ -1,4 +1,4 @@
-# Phase 2 diagnostic: Stage 2 PPO on DotShot v2.2 with standard PPO settings.
+# Development run (experiment log 4.4): Stage 2 PPO with standard settings, used in the decision-interval comparison.
 stage: 2
 algo: ppo
 exp_name: stage2_ppo_v22_std

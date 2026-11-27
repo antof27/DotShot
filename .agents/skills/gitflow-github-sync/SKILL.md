@@ -8,7 +8,7 @@ description: >-
 
 # Gitflow & GitHub Synchronization Protocol
 
-Use this skill at the start and end of every development phase in `RL/RL-game1` (`antof27/RL-game1`) and when contributing upstream to `C:\Users\anton\Documents\Notelia` (`Prv2106/Notelia`).
+Use this skill at the start and end of every development phase in this repository (`antof27/DotShot`) and when contributing upstream to the Notelia repository (`Prv2106/Notelia`).
 
 ---
 

@@ -1,11 +1,11 @@
-"""Phase gate check: learner (one final test score per seed) vs scripted baselines (per episode).
+"""Acceptance check: learner (one final test score per seed) vs scripted baselines (per episode).
 
 A learner "beats" a baseline when the lower end of its 95% bootstrap CI of the mean
 lies above the upper end of the baseline's CI.
 
 Usage:
-    python scripts/check_gate.py --runs runs/phase1/stage3_harl_mappo_gate \
-        --baselines runs/baselines_phase1/stage3 --min-kills 3
+    python scripts/check_gate.py --runs runs/final/stage3/s3_harl_mappo_bc \
+        --baselines runs/baselines/stage3 --min-kills 3
 """
 
 import argparse

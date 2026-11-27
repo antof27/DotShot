@@ -15,6 +15,7 @@ models_marl/*
 *.pth
 *.zip
 *.db
+*.journal
 *.sqlite
 runs/optuna_*.db*
 run_tuning.sh

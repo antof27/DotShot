@@ -58,7 +58,7 @@ The simulator knows nothing about learners. Learners reach it only through the t
 ## 2. Repository Layout
 
 ```text
-RL-game1/
+DotShot/
 |-- src/
 |   |-- dotshot/
 |   |   |-- core/

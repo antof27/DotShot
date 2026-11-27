@@ -1,4 +1,4 @@
-# Phase 2 step 16 check on DotShot v2.2, M3 hyperparameters (pre-retuning).
+# Development run (experiment log 4.4): Stage 1 PPO on DotShot v2.2, hyperparameters from before the final search.
 stage: 1
 algo: ppo
 exp_name: stage1_ppo_v22

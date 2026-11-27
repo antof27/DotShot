@@ -53,7 +53,7 @@ No documentation update is finished until `scripts/validate_docs.py` passes with
 
 ---
 
-## 3. Upstream Notelia Gitflow Protocol (`C:\Users\anton\Documents\Notelia`)
+## 3. Upstream Notelia Gitflow Protocol
 
 When updating or contributing skills back to the local Notelia repository:
 1. Check `git status` and ensure you are on `dev` (`git checkout dev && git pull origin dev`). Never commit directly to `main`.

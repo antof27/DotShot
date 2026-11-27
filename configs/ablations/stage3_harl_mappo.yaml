@@ -1,5 +1,5 @@
-# Phase 1 gate retry on DotShot v2.2 (same learner config as attempt 1).
-# Untuned defaults; must beat noop and charge beyond the 95% CI with >= 3 kills/episode.
+# Development run (experiment log 4.4): untuned HARL-MAPPO on Stage 3, used for the second acceptance check
+# and the learnability experiments. The check asked to beat noop and charge with at least 3 kills per episode.
 stage: 3
 algo: harl_mappo
 total_steps: 2000000

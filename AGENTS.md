@@ -40,7 +40,7 @@ DotShot Game evolves incrementally. No feature or experiment is complete until b
 
 ## 6. Upstream Notelia Collaboration
 
-- The companion repository at `C:\Users\anton\Documents\Notelia` tracks the upstream **Notelia** skill and LaTeX/Typst publishing infrastructure.
+- A separate local clone of the companion repository **Notelia** tracks the upstream **Notelia** skill and LaTeX/Typst publishing infrastructure.
 - When contributing improvements back to Notelia, strictly follow Notelia's own `AGENTS.md` Gitflow rules: inspect status, pull `origin/dev`, work on a dedicated `feature/*` branch, pass 100% of automated white-box and black-box tests, merge `--no-ff` into local `dev`, and push only when explicitly requested.
 
 ---
@@ -52,8 +52,7 @@ DotShot Game evolves incrementally. No feature or experiment is complete until b
 - [DECISIONS.md](.agents/docs/DECISIONS.md): Architectural Decision Records that still hold.
 - [ROADMAP.md](.agents/docs/ROADMAP.md): Status of the simulator, the benchmark suite and the documentation.
 
-### Workspace Skills (`.agents/skills/`) and Global Skills
-- [opencode-workers](file:///C:/Users/anton/.gemini/config/skills/opencode-workers/SKILL.md) (global): Orchestrator-worker delegation via `opencode run` or fast `flash` subagents to conserve Gemini orchestrator tokens.
+### Workspace Skills (`.agents/skills/`)
 - [ponytail](.agents/skills/ponytail/SKILL.md) (`DietrichGebert/ponytail`, global + workspace; paired with `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`, `ponytail-help`): Lazy senior dev YAGNI discipline, minimal complete diffs, code review, and bloat audits.
 - [humanizer](.agents/skills/humanizer/SKILL.md) (`blader/humanizer` v4.0.0, global + workspace): Scientific and technical prose cleanup against AI writing patterns.
 - [notelia-docs](.agents/skills/notelia-docs/SKILL.md): Pedagogical handbook structure, KaTeX/Mermaid formatting, and BibTeX quality gates.
