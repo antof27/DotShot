@@ -210,7 +210,7 @@ An optional potential-based guard term (`guard_potential_coef`, off by default) 
 ## 3.8 Episode End and Victory
 
 - **Stages 1–2.** The episode ends when the agent dies (terminated) or at the tick limit (truncated). Reaching the limit alive counts as a win.
-- **Stages 3–4.** The episode ends early only when the Core is destroyed. Reaching the tick limit with the Core alive is a **terminal victory** that pays the win bonus. It is a terminal step rather than a time-limit truncation because HARL drops the reward of truncated steps.
+- **Stages 3–4.** The episode ends early only when the Core is destroyed. Reaching the tick limit with the Core alive is a **terminal victory** that pays the win bonus. The step is marked terminal because HARL drops the reward of steps marked as truncated.
 
 ### Why v2.2 changed these rules
 
@@ -244,7 +244,7 @@ Every evaluation also records how the policy behaves, because a high return can 
 
 ## 3.11 Renderer
 
-The physics never imports Pygame. `DotShotPygameRenderer` draws an engine state at 1440 × 960 and can run headless (`SDL_VIDEODRIVER=dummy`) for videos and screenshots. `Tab` toggles an overlay with LIDAR rays and aim lines. `scripts/enjoy.py` plays any stage by hand or replays a trained policy, and `scripts/capture_screenshots.py` regenerates the gallery below.
+The physics never imports Pygame. `DotShotPygameRenderer` draws an engine state at 1440 × 960 and can run headless (`SDL_VIDEODRIVER=dummy`) for videos and screenshots. `Tab` toggles an overlay with LIDAR rays and aim lines. `scripts/enjoy.py` plays any stage by hand or replays a trained run on a held-out test episode; with `--snapshots` it saves frames at ticks or events of a replay. The gallery below shows the final trained policies (Stage 1 PPO, Stage 2 PPO transferred from Stage 1, Stage 3 MAT and Stage 4 MAPPO, both started from the cloned script).
 
 ### Stage 1
 ![Stage 1](assets/screenshots/stage1_cover_combat.png)

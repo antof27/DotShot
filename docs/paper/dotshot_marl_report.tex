@@ -127,7 +127,7 @@ The engine advances in \emph{ticks}. Agents choose a new action every $k = 8$ ti
 \includegraphics[width=0.49\textwidth]{../assets/screenshots/stage2_elemental_mastery.png}\\[2pt]
 \includegraphics[width=0.49\textwidth]{../assets/screenshots/stage3_coop_boss_overlay.png}
 \includegraphics[width=0.49\textwidth]{../assets/screenshots/stage4_heterogeneous_squad.png}
-\caption{The four stages. Top: Stage 1 (one Striker, Fire enemies, four pillars) and Stage 2 (three elements, enemy fire, a neutral ally). Bottom: Stage 3 (two Strikers defending the Core against a shielded boss) and Stage 4 (Vanguard, Striker and Support). Aim lines and LIDAR rays come from the renderer's debug overlay.}
+\caption{The four stages, played by the final trained policies on held-out test episodes. Top left, Stage 1 (PPO): the Striker (white) fires Water at Fire enemies (orange triangles) between four pillars. Top right, Stage 2 (PPO transferred from Stage 1): the Striker, bottom right, fires Fire at a Grass enemy (green square) while Water (blue circle) and Fire enemies approach and two unarmed neutral allies (small white circles) cross the arena. Bottom left, Stage 3 (MAT): one Striker breaks a Water boss's shield with Grass while the other covers the south of the Core (ring in the centre). Bottom right, Stage 4 (MAPPO): the Vanguard's Aegis is up, the Support's Pulse marks an enemy, and the squad converges on it. Thin lines are the renderer's aim and LIDAR overlay.}
 \label{fig:screenshots}
 \end{figure}
 
@@ -334,7 +334,8 @@ Stage & Policy & Return [95\% CI] & Win & Kills & Core HP & Elem.\ acc. & Move &
 \section{How the Benchmark Became Learnable}
 \label{sec:dev}
 
-This section summarises the development experiments that led to the final setup. They are single runs or short multi-seed checks. We report them because each one justifies a design decision; the benchmark results follow in Section~ef{sec:results}, and the detailed records are in the experiment log of the handbook.
+This section summarises the development experiments that led to the final setup. They are single runs or short multi-seed checks. We report them because each one justifies a design decision; the benchmark results follow in Section~
+ef{sec:results}, and the detailed records are in the experiment log of the handbook.
 
 \subsection{The First Results and the Suicide Trap}
 
@@ -606,7 +607,7 @@ The screenshots in Figure~\ref{fig:shots-stage4} show the squad's main strength 
 
 \paragraph{Limitations.} This is a proof of concept on one workstation, and several choices bound what the results can claim.
 \begin{itemize}
-    \item \textbf{Budgets.} Cloned-start runs use the 4M-tick budget at which they were tuned; scratch runs stop at 16M ticks while their curves are still rising. The comparison between scratch learners is therefore a comparison of early learning speed, not of final performance.
+    \item \textbf{Budgets.} Cloned-start runs use the 4M-tick budget at which they were tuned; scratch runs stop at 16M ticks while their curves are still rising. The comparison between scratch learners therefore measures early learning speed; final performance may rank them differently.
     \item \textbf{Selection.} Only the two learners that led each scratch pilot were scaled. The pilot used 2 seeds and validation episodes, and the other three learners may overtake them at larger budgets.
     \item \textbf{Tuning.} Stage 4 studies were stopped at 16 trials instead of 24. Scratch hyperparameters were not tuned, because the search could not rank them at its budget; all scratch runs share one standard configuration. Stage 2 transfer trials were effectively single-seed because of a seeding bug that was fixed before the final runs.
     \item \textbf{Statistics.} Five seeds give wide intervals on win rates; differences of a few points between learners are within noise, as the overlapping intervals show.

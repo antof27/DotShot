@@ -82,7 +82,7 @@ HARL-MAPPO with all learner fixes (true ratio, masked entropy, dead-agent masks,
 | noop | −4.31 [−4.70, −3.94] | 0.0 | 433 |
 | charge | −3.04 [−3.31, −2.79] | 0.0 | 266 |
 
-The learner beat `noop` and `charge` but missed the gate's minimum of 3 kills per episode. The reward breakdown showed why: aim shaping, then paid every tick for pointing at the current position of the nearest enemy, earned +1.28 per episode, 3.6 times the reward for correct hits (+0.35). Elemental accuracy stayed at chance and the policy entropy at 6.1–6.2 of a maximum of 7.05. The learner was paid for pointing, not for shooting well. This led to DotShot v2.2 (simulator chapter, §3.7–3.9).
+The learner beat `noop` and `charge` but missed the gate's minimum of 3 kills per episode. The reward breakdown showed why: aim shaping, then paid every tick for pointing at the current position of the nearest enemy, earned +1.28 per episode, 3.6 times the reward for correct hits (+0.35). Elemental accuracy stayed at chance and the policy entropy at 6.1–6.2 of a maximum of 7.05. The learner earned more for pointing at enemies than for hitting them. This led to DotShot v2.2 (simulator chapter, §3.7–3.9).
 
 ### 4.4.2 Diagnostics on early v2.2 builds
 
@@ -103,11 +103,11 @@ What the behaviour probes showed:
 - **Build b.** The Stage 2 PPO policy fired Water on 74% of its shots whatever the crosshair showed.
 - **Build c.** Its choice now depended on the target (Grass against Water 62% of the time, Water against Fire 61%), though Fire against Grass was still rare (11%).
 
-More gradient steps per sample did not help HARL-MAPPO, so the slow learning came from credit assignment for the element choice, not from the optimiser.
+More gradient steps per sample did not help HARL-MAPPO, so the slow learning came from credit assignment for the element choice; a larger optimiser budget did not change it.
 
 ### 4.4.3 Gate 2: v2.2 at one decision per tick (failed)
 
-The gate-1 learner on the final v2.2 rules, 2M ticks, seeds 0–4 (`gate_v22_k1.json`): return −1.64 [−1.98, −1.23], 1.84 kills per episode, elemental accuracy 39–57% per seed, 0% wins. The gate failed again on kills, but validation kills rose on every seed and flattened only as the decaying learning rate approached zero. The learner was improving slowly rather than failing.
+The gate-1 learner on the final v2.2 rules, 2M ticks, seeds 0–4 (`gate_v22_k1.json`): return −1.64 [−1.98, −1.23], 1.84 kills per episode, elemental accuracy 39–57% per seed, 0% wins. The gate failed again on kills, but validation kills rose on every seed and flattened only as the decaying learning rate approached zero. Training was still making progress when it ended.
 
 ### 4.4.4 Decision interval
 
@@ -222,7 +222,7 @@ Warm-started rows: actor cloned from `heuristic_calibrated`, 10 critic-only upda
 
 Scratch pilot (2 seeds, 8M ticks, mean final `val` return, the selection criterion): MAT 5.03, MAPPO 4.18, HAA2C 0.74, HAPPO −0.03, HATRPO −1.56 (`runs/pilot/stage3/selection.json`).
 
-- **Cloned starts end close to the script but below it.** All five learners improve on the clone (validation return 55–62 at the start of RL, 80–87 after 4M ticks) and land within 9 points of the script's return. HAA2C and MAT are ahead of HAPPO with non-overlapping intervals; the other differences are within noise. Every learner wins fewer episodes than the script (57–63% against 78%), with the same Core HP left at the end, so the gap is in how often the Core survives, not in how well the agents fight.
+- **Cloned starts end close to the script but below it.** All five learners improve on the clone (validation return 55–62 at the start of RL, 80–87 after 4M ticks) and land within 9 points of the script's return. HAA2C and MAT are ahead of HAPPO with non-overlapping intervals; the other differences are within noise. Every learner wins fewer episodes than the script (57–63% against 78%), with the same Core HP left at the end, so the learned teams fight as well as the script but lose the Core more often.
 - **HAA2C buys its return with risk.** It moves 76% of the time against 29–58% for the others and dies 1.1 times per episode against 0.3–0.5. Without PPO's clipping or a trust region, its policy drifted further from the cautious clone.
 - **From scratch, shared parameters learn first.** In the pilot the two learners with one network for both agents (MAPPO, and MAT's shared transformer) were the only ones clearly above zero at 8M ticks; HAPPO, HATRPO and HAA2C train one actor per agent and see half the data each. At 16M ticks MAPPO and MAT learned to aim and to choose the element (83% right) but not to hold the Core: it falls in nearly every episode. The 24M-tick development run (§4.4.5) reached a test return of 53, so the scratch curve keeps rising well past this budget.
 - **Shaping stays a minority of the return.** Aim shaping plus element credit contribute 17–18 of the 79–85 points of the cloned learners (about 20%), and the win bonus is small (0.4), because the Core rarely ends with much HP.
@@ -250,6 +250,10 @@ Scratch pilot (2 seeds, 8M ticks, mean final `val` return): MAPPO 4.01, MAT 2.92
 - **From scratch, Stage 4 learns further than Stage 3.** After 16M ticks MAPPO and MAT reach 32–34 return and win their first episodes (about 6%), against 20–23 and almost no wins on Stage 3. The Support's healing and the Vanguard's damage reduction keep a struggling team alive longer, which gives it more experience of the later waves.
 - **The best policies changed how the team moves.** MAPPO and HAA2C move 70–73% of the time against 34% for the script and the other learners, while dying no more often.
 
+
+### 4.6.4 Replays
+
+Won held-out test episodes of the final policies, recorded with `scripts/enjoy.py --run <run> --episode <i> --record <file>`: [Stage 3, MAT started from the cloned script](assets/videos/stage3_mat.mp4) (test episode 2 of seed 2, Core at 21%) and [Stage 4, MAPPO started from the cloned script](assets/videos/stage4_mappo.mp4) (test episode 1 of seed 0, Core at 46%). Behaviour statistics of every analysed policy are in `docs/results/behaviour/`.
 
 ---
 

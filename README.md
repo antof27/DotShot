@@ -36,6 +36,8 @@ Final policies, 5 seeds each, 32 held-out test episodes per seed. Return: mean o
 - From scratch, the learners that share parameters across agents (MAPPO, MAT) learn fastest, but 16M ticks are not enough to defend the Core reliably.
 - On the heterogeneous Stage 4, the shared-actor MAPPO beats HAPPO and HATRPO, the methods designed for heterogeneous teams.
 
+Replays of won held-out test episodes: [Stage 3, MAT](docs/assets/videos/stage3_mat.mp4) and [Stage 4, MAPPO](docs/assets/videos/stage4_mappo.mp4).
+
 Every learner, tables, learning curves, behaviour analysis and screenshots: [experiment log](docs/04-experiments-log.md) and [report](docs/paper/dotshot_marl_report.pdf).
 
 ## Learners

@@ -102,7 +102,6 @@ RL-game1/
 |   |-- report_final.py           # Final tables and figures
 |   |-- check_gate.py             # Learner vs baselines acceptance check
 |   |-- enjoy.py                  # Manual play and policy replay, MP4 export
-|   |-- capture_screenshots.py
 |   `-- validate_docs.py          # Citation and link checks
 |-- tests/
 |-- docs/                         # Handbook (docsify), report, results, assets
