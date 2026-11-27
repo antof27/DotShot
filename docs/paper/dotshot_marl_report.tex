@@ -514,7 +514,9 @@ HAA2C, cloned & $103.95\;[102.75, 105.16]$ & 85.6\% & 55.0 & 88.6\% & 48.5\% & 0
 MAT, cloned & $100.93\;[99.21, 102.93]$ & 70.0\% & 52.9 & 87.5\% & 30.1\% & 0.0 & 34\% \\
 HATRPO, cloned & $99.40\;[97.07, 102.04]$ & 73.8\% & 52.8 & 87.5\% & 36.0\% & 0.1 & 38\% \\
 HAPPO, cloned & $91.63\;[88.62, 95.52]$ & 63.7\% & 49.2 & 85.2\% & 30.9\% & 0.2 & 42\% \\
-% STAGE4-SCRATCH-ROWS
+\midrule
+MAPPO, scratch & $34.32\;[31.38, 37.58]$ & 5.6\% & 22.8 & 70.7\% & 1.0\% & 0.2 & 91\% \\
+MAT, scratch & $32.23\;[25.75, 38.37]$ & 6.2\% & 22.2 & 71.4\% & 2.0\% & 0.2 & 87\% \\
 \midrule
 scripted reference & $100.17\;[96.89, 103.34]$ & 75.0\% & 52.3 & 89.9\% & 31.0\% & 0.2 & 34\% \\
 \bottomrule
@@ -524,12 +526,21 @@ scripted reference & $100.17\;[96.89, 103.34]$ & 75.0\% & 52.3 & 89.9\% & 31.0\%
 
 \begin{figure}[t]
 \centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage4_curves.png}
+\caption{Stage 4 validation curves (mean and 95\% bootstrap band over 5 seeds); the dashed line is the scripted reference's test return. Left: from the cloned start, MAPPO and HAA2C pass the script within about 2.5M ticks, HATRPO and MAT reach it near the end, and HAPPO levels off around 93. Right: from scratch, MAPPO and MAT again follow nearly the same curve and reach about 40 on validation after 16M ticks.}
+\label{fig:results-stage4-curves}
+\end{figure}
+
+\begin{figure}[t]
+\centering
 \includegraphics[width=\textwidth]{../assets/figures/final_stage4_scores.png}
 \caption{Stage 4 test return and win rate per configuration (mean and 95\% bootstrap interval over 5 seeds). Dashed line: scripted reference; dotted line: \texttt{noop}.}
 \label{fig:results-stage4-scores}
 \end{figure}
 
-Two learners beat the script that taught them (Table~\ref{tab:results-stage4}, Figure~\ref{fig:results-stage4-scores}). MAPPO and HAA2C end with a higher return than the scripted reference, with non-overlapping intervals, win 88\% and 86\% of test episodes against 75\%, and finish with half of the Core's HP instead of a third. MAT and HATRPO end level with the script, and HAPPO below it.
+Two learners beat the script that taught them (Table~\ref{tab:results-stage4}, Figures~\ref{fig:results-stage4-curves} and~\ref{fig:results-stage4-scores}). MAPPO and HAA2C end with a higher return than the scripted reference, with non-overlapping intervals, win 88\% and 86\% of test episodes against 75\%, and finish with half of the Core's HP instead of a third. MAT and HATRPO end level with the script, and HAPPO below it.
+
+From scratch, Stage 4 gets further than Stage 3 in the same 16M ticks: MAPPO and MAT reach 32--34 and win their first episodes (about 6\%), against 20--23 and almost no wins on Stage 3. A plausible reason is that the Support's healing and the Vanguard's damage reduction keep a weak team alive longer, so it sees more of the later waves.
 
 The ranking runs against the usual expectation. HAPPO and HATRPO were designed for teams whose agents differ, and Stage 4 is the one stage where they do: a tank, a damage dealer and a healer with different speeds, health and abilities. Yet MAPPO, which trains one actor for all three, finishes first from the cloned start and first in the scratch pilot, and HAPPO finishes last among the cloned starts. Two properties of DotShot explain this, in our reading. Every observation contains the agent's class, so a shared network can condition its behaviour on the role; and sharing gives each parameter three times as much data. The monotonic-improvement guarantee of sequential updates did not translate into better policies at these budgets.
 
@@ -547,7 +558,23 @@ The ranking runs against the usual expectation. HAPPO and HATRPO were designed f
 \label{fig:behaviour-stage4-stats}
 \end{figure}
 
-\paragraph{How the squad plays.} Figures~\ref{fig:behaviour-stage4-maps} and~\ref{fig:behaviour-stage4-stats} break the behaviour down by role. The script sends its Vanguard out to meet enemies (152 px from the Core on average, with long excursions toward the edges) and keeps the Support closest. Every learned policy pulls the whole squad inward, to 75--113 px for MAPPO, HAA2C and MAT, and MAPPO spreads its three agents around different sides of the Core. The learned policies also use their abilities slightly less often than the script (MAPPO: 11.6 Aegis and 12.9 Pulse per episode against 13.4 and 16.2), so their advantage does not come from more frequent ability use. It comes from where the agents stand and how they move. MAPPO and HAA2C, the two that beat the script, are also the two that move most (70--73\% of the time against 34--42\% for the other policies), without dying more often.
+\paragraph{How the squad plays.} Figures~\ref{fig:behaviour-stage4-maps} and~\ref{fig:behaviour-stage4-stats} break the behaviour down by role. The script sends its Vanguard out to meet enemies (152 px from the Core on average, with long excursions toward the edges) and keeps the Support closest. Every cloned-start policy pulls the squad inward, to 75--113 px for MAPPO, HAA2C and MAT, and MAPPO spreads its three agents around different sides of the Core. The scratch MAPPO policy does the opposite: its agents spend most of their time 280--340 px out and use their abilities about half as often. The cloned-start policies use their abilities slightly less often than the script (MAPPO: 11.6 Aegis and 12.9 Pulse per episode against 13.4 and 16.2), so ability use does not explain their lead; where the agents stand and how they move does. MAPPO and HAA2C, the two that beat the script, are also the two that move most (70--73\% of the time against 34--42\% for the other policies), without dying more often.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/behaviour_stage4_core_weapons.png}
+\caption{Stage 4. Left: Core HP over the episode (16 test episodes per policy). MAPPO and HAA2C, the two policies that beat the script, keep the Core above the script's curve from the middle of the episode on; the scratch MAPPO policy loses it by the end. Right: weapon chosen when an enemy of a given element is under the aim. On Stage 4, holding fire also triggers the class ability, which is why the scratch policy holds with a target in its sights 17--20\% of the time.}
+\label{fig:behaviour-stage4-core}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage4_components.png}
+\caption{Where the Stage 4 return comes from (mean test return per reward group). Combat terms dominate every policy, and the support group (Aegis absorption, healing, marking) is small throughout. Most of MAPPO's lead over the script, 6.2 of 7.7 points, is in the combat group.}
+\label{fig:results-stage4-components}
+\end{figure}
+
+Figures~\ref{fig:behaviour-stage4-core} and~\ref{fig:results-stage4-components} show where the lead over the script comes from. The Core HP curves of MAPPO and HAA2C separate from the script's halfway through the episode and end 17 points higher. In the reward decomposition, most of MAPPO's lead (6.2 of 7.7 points) is in combat: it kills 56.1 enemies per episode against 52.3, because a Core that stands longer keeps the waves coming. The win bonus grows from 0.62 to 0.98 and Core damage shrinks from $-5.96$ to $-5.13$, but other penalties grow, and the net penalty is slightly larger than the script's ($-9.3$ against $-8.6$). Shaping is the same for both (19.2 and 18.2), so the learned squad did not find a way to collect shaping that the script leaves behind.
 
 \begin{figure}[t]
 \centering

@@ -219,13 +219,15 @@ Same protocol as Stage 3.
 | MAT, cloned start | 100.93 [99.21, 102.93] | 100.70 | 70.0 | 52.9 | 87.5 | 30.1 | 0.0 | 0.34 |
 | HATRPO, cloned start | 99.40 [97.07, 102.04] | 98.84 | 73.8 | 52.8 | 87.5 | 36.0 | 0.1 | 0.38 |
 | HAPPO, cloned start | 91.63 [88.62, 95.52] | 90.92 | 63.7 | 49.2 | 85.2 | 30.9 | 0.2 | 0.42 |
-<!-- STAGE4-SCRATCH-ROWS -->
+| MAPPO, scratch (16M ticks) | 34.32 [31.38, 37.58] | 33.96 | 5.6 | 22.8 | 70.7 | 1.0 | 0.2 | 0.91 |
+| MAT, scratch (16M ticks) | 32.23 [25.75, 38.37] | 33.01 | 6.2 | 22.2 | 71.4 | 2.0 | 0.2 | 0.87 |
 | *heuristic_calibrated* (96 ep.) | 100.17 [96.89, 103.34] | 103.68 | 75.0 | 52.3 | 89.9 | 31.0 | 0.2 | 0.34 |
 
 Scratch pilot (2 seeds, 8M ticks, mean final `val` return): MAPPO 4.01, MAT 2.92, HAPPO 0.84, HAA2C −1.18, HATRPO −1.68 (`runs/pilot/stage4/selection.json`).
 
 - **Two learners beat the script.** MAPPO and HAA2C end above the scripted reference on every column that matters: return (intervals do not overlap), wins (88% and 86% against 75%) and Core HP left (49% against 31%). MAT and HATRPO match the script; HAPPO stays below it.
 - **On the heterogeneous stage the shared actor wins.** HAPPO and HATRPO were designed for teams of different agents, yet MAPPO, with one actor for all three roles, finishes first both from the cloned start and in the scratch pilot, and HAPPO finishes last among the cloned starts. The class one-hot in the observation is enough for a shared network to behave differently per role, and sharing triples the data each actor parameter sees.
+- **From scratch, Stage 4 learns further than Stage 3.** After 16M ticks MAPPO and MAT reach 32–34 return and win their first episodes (about 6%), against 20–23 and almost no wins on Stage 3. The Support's healing and the Vanguard's damage reduction keep a struggling team alive longer, which gives it more experience of the later waves.
 - **The best policies changed how the team moves.** MAPPO and HAA2C move 70–73% of the time against 34% for the script and the other learners, while dying no more often.
 
 
