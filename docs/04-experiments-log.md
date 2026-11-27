@@ -161,7 +161,27 @@ Two things to keep in mind when reading the search results:
 - **Scratch trials on Stages 3–4 rank on a weak signal.** At 4M ticks a scratch learner has barely left the random level (§4.4.5), so its tuned values are only a starting point for the long final runs.
 - **Stage 2 transfer trials are effectively single-seed.** `PPO.load` restored the seed stored in the Stage 1 checkpoint, so both seeds of a transfer trial produced the same run (trial 5 scored 44.67 on both). The runner now reseeds after loading (`tests/test_transfer_seed.py`); the fix landed while the Stage 2 study was running, and the final runs use it.
 
-<!-- TUNING-RESULTS: best trial per study and warm start, added when all studies finish. -->
+Results (`docs/results/optuna_summary.json`; Stage 4 studies stopped at 16 trials, the others ran 24; C = completed, P = pruned):
+
+| Study | C / P | Best cloned or transfer start | Best scratch start | Most important (fANOVA) |
+| :--- | :---: | :---: | :---: | :--- |
+| Stage 1 PPO | 5 / 19 | – | 44.77 | lr 0.49, ent_coef 0.42 |
+| Stage 2 PPO | 10 / 14 | 46.44 (transfer) | 22.88 | lr 0.50, ent_coef 0.41 |
+| Stage 3 MAPPO | 8 / 16 | 86.57 | −1.81 | entropy_coef 0.38, lr 0.35 |
+| Stage 3 HAPPO | 5 / 19 | 83.71 | – | entropy_coef 0.53, critic_lr 0.20 |
+| Stage 3 HATRPO | 11 / 13 | 87.02 | – | entropy_coef 0.87 |
+| Stage 3 HAA2C | 10 / 14 | 88.97 | −5.47 | entropy_coef 0.32, critic_lr 0.29 |
+| Stage 3 MAT | 8 / 17 | 85.45 | – | lr 0.48, entropy_coef 0.36 |
+| Stage 4 MAPPO | 7 / 9 | 109.05 | – | lr 0.36, critic_lr 0.30 |
+| Stage 4 HAPPO | 6 / 10 | 96.23 | −4.77 | entropy_coef 0.49, lr 0.29 |
+| Stage 4 HATRPO | 5 / 11 | 102.50 | −4.11 | kl_threshold 0.50, entropy_coef 0.29 |
+| Stage 4 HAA2C | 7 / 9 | 107.21 | – | entropy_coef 0.36, critic_lr 0.36 |
+| Stage 4 MAT | 6 / 10 | 102.12 | – | entropy_coef 0.57, lr 0.36 |
+
+- **The warm start is the dominant choice.** Every best Stage 3–4 trial starts from the cloned script; the best scratch trials stay between −5.5 and −1.8, and most scratch trials were pruned at the first rung. fANOVA does not show this, because it only sees completed trials, almost all of which are cloned starts.
+- **Among the other hyperparameters, the entropy coefficient and the learning rates explain most of the variance** in every study, as in the first round of tuning; network size, epochs and minibatch counts matter little.
+- **Stage 4 studies start from the best Stage 3 configuration** of the same learner, and for HAA2C and HATRPO that enqueued trial stayed the best one.
+- Scratch configurations were not taken from the search (see §4.6): the final scratch runs use one standard configuration for every learner.
 
 ---
 

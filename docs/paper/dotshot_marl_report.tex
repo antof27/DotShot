@@ -19,7 +19,7 @@
 \maketitle
 
 \begin{abstract}
-% ABSTRACT: written last, from the final results.
+DotShot is a 2D arena shooter with a four-stage curriculum for single- and multi-agent reinforcement learning: aiming, choosing the counter element among three, defending a shared Core with two agents under partial observability, and doing so with a heterogeneous squad of tank, damage dealer and healer. We describe the simulator (v2.2), connect Stable-Baselines3 PPO and the reference implementations of MAPPO, HAPPO, HATRPO, HAA2C and MAT to it, and evaluate them with per-learner hyperparameter searches, five seeds, held-out test episodes and a behaviour audit. A first round of results was withdrawn after an audit found integration bugs and a reward loophole that made dying the best strategy; we document the changes to the environment that made the cooperative stages learnable. PPO solves Stage 1 and, started from its Stage 1 policy, doubles the Stage 2 return of training from scratch. On the cooperative stages, learners initialised by cloning a scripted expert and fine-tuned for 4M ticks reach the expert on Stage 3 and beat it on Stage 4: MAPPO wins 88\% of test episodes against 75\% for the expert. From scratch, the learners that share parameters across agents learn fastest, but after 16M ticks they still lose the Core in most episodes. On the heterogeneous stage, the shared-actor MAPPO outperforms the heterogeneous-agent methods designed for it.
 \end{abstract}
 
 \section{Introduction}
@@ -285,7 +285,16 @@ From random weights, Stage 3--4 learners need tens of millions of ticks to learn
 \subsection{Hyperparameter Search}
 \label{sec:tuning}
 
-Each stage and learner has its own Optuna~\cite{akiba2019optuna} study: Stage 1 and Stage 2 PPO, and Stages 3 and 4 for each of the five multi-agent learners, twelve studies in all. A study runs 24 trials with a multivariate TPE sampler and Hyperband pruning between 1M and 4M ticks (reduction factor 3), a BOHB-style combination~\cite{falkner2018bohb}. Trials report every 0.5M ticks on 16 validation episodes of their first seed. A trial that reaches the full budget also trains a second seed, and its objective is the mean final-policy return of both seeds on 32 validation episodes. The search covers learning rates, entropy coefficient, clipping or KL threshold, epochs, minibatches, $\gamma$, $\lambda$, network width and, for MAT, the transformer size. The warm start (scratch or cloned; scratch or transfer on Stage 2) is itself a searched parameter, and the best trial of each kind is retrained at the final budget. Each Stage 4 study starts from the best Stage 3 configuration of the same learner.
+Each stage and learner has its own Optuna~\cite{akiba2019optuna} study: Stage 1 and Stage 2 PPO, and Stages 3 and 4 for each of the five multi-agent learners, twelve studies in all. A study runs 24 trials with a multivariate TPE sampler and Hyperband pruning between 1M and 4M ticks (reduction factor 3), a BOHB-style combination~\cite{falkner2018bohb}. Trials report every 0.5M ticks on 16 validation episodes of their first seed. A trial that reaches the full budget also trains a second seed, and its objective is the mean final-policy return of both seeds on 32 validation episodes. The search covers learning rates, entropy coefficient, clipping or KL threshold, epochs, minibatches, $\gamma$, $\lambda$, network width and, for MAT, the transformer size. The warm start (scratch or cloned; scratch or transfer on Stage 2) is itself a searched parameter, and the best trial of each kind is retrained at the final budget. Each Stage 4 study starts from the best Stage 3 configuration of the same learner. Stage 1--3 studies ran 24 trials; the Stage 4 studies were stopped at 16, because each started from a strong configuration and later trials rarely improved on it.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/tuning_stage34.png}
+\caption{The Stage 3--4 searches: every completed trial (circles: cloned start; crosses: scratch) and the best value so far per learner. Cloned starts reach 80--89 on Stage 3 and 96--109 on Stage 4 within a few trials; the few scratch trials that were not pruned stay below zero.}
+\label{fig:tuning}
+\end{figure}
+
+Figure~\ref{fig:tuning} shows the outcome. The warm start decides most of the objective: every best Stage 3--4 trial starts from the cloned script, and the best scratch trials stay between $-5.5$ and $-1.8$, because 4M ticks is too short for a scratch learner to leave the random level (Section~\ref{sec:dev-learn}). Among the remaining hyperparameters, a functional-ANOVA analysis of the completed trials attributes most of the variance to the entropy coefficient and the learning rates in every study; network width, epochs and minibatch counts matter little. Since the search could not rank scratch configurations, the final scratch runs use one standard configuration for every learner, the one that learned Stage 3 in the 24M-tick development run.
 
 \section{Evaluation Protocol and Baselines}
 \label{sec:protocol}

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-26T08:17:54+01:00",
+  "generated_at": "2026-11-27T01:49:25+01:00",
   "protocol": {
     "sampler": "TPESampler(multivariate=True, seed=42)",
     "pruner": "HyperbandPruner(min_resource=125000, max_resource=500000, reduction_factor=3)",
@@ -4567,8 +4567,8 @@
         "ppo_epoch": 0.043212897870404936,
         "actor_num_mini_batch": 0.004123501812242583,
         "critic_num_mini_batch": 0.0024782736408982234,
-        "gae_lambda": 0.0020810230112309927,
         "clip_param": 0.0020810230112309927,
+        "gae_lambda": 0.0020810230112309927,
         "gamma": 0.0009773524111247656,
         "warm_start": 0.0004621311402777686,
         "hidden_size": 0.00030082071493372326,
