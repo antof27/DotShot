@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dotshot"
+version = "2.2.0"
+description = "DotShot v2.2: a four-stage arena shooter for single- and multi-agent reinforcement learning"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "gymnasium>=1.0.0",
+    "pettingzoo>=1.24.3",
+    "stable-baselines3>=2.4.0",
+    "pygame>=2.6.0",
+    "numpy>=1.26.0",
+    "pyyaml>=6.0",
+    "scipy>=1.11.0",
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "imageio[ffmpeg]>=2.34.0",
+    "tensorboard>=2.15.0",
+    "optuna>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["dotshot*", "benchmarks*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-m 'not slow'"
+markers = ["slow: multi-minute training sanity checks (run with `pytest -m slow`)"]

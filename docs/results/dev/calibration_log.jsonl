@@ -1,0 +1,20 @@
+{"stage": 3, "overrides": {}, "policy": "heuristic_calibrated", "n": 16, "return": 87.86, "win": 0.938, "kills": 42.0, "core": 0.249, "len": 1988, "secs": 27}
+{"stage": 3, "overrides": {}, "policy": "noop", "n": 16, "return": -7.35, "win": 0.0, "kills": 0.0, "core": 0.0, "len": 494, "secs": 4}
+{"stage": 3, "overrides": {}, "policy": "charge", "n": 16, "return": -10.71, "win": 0.0, "kills": 0.0, "core": 0.0, "len": 483, "secs": 3}
+{"stage": 3, "overrides": {}, "policy": "random", "n": 16, "return": -6.68, "win": 0.0, "kills": 0.1, "core": 0.0, "len": 503, "secs": 5}
+{"stage": 4, "overrides": {}, "policy": "heuristic_calibrated", "n": 32, "return": 105.65, "win": 1.0, "kills": 57.6, "core": 0.84, "len": 2200, "secs": 99}
+{"stage": 4, "overrides": {}, "policy": "noop", "n": 32, "return": -9.2, "win": 0.0, "kills": 0.0, "core": 0.0, "len": 594, "secs": 16}
+{"stage": 4, "overrides": {}, "policy": "charge", "n": 32, "return": -12.69, "win": 0.0, "kills": 0.0, "core": 0.0, "len": 565, "secs": 11}
+{"stage": 4, "overrides": {}, "policy": "random", "n": 32, "return": -8.26, "win": 0.0, "kills": 0.2, "core": 0.0, "len": 593, "secs": 19}
+{"stage": 3, "overrides": {}, "policy": "heuristic_calibrated", "n": 32, "return": 85.72, "win": 0.781, "kills": 41.4, "core": 0.229, "len": 1969, "secs": 54}
+{"stage": 4, "overrides": {"spawn_cooldown": 22}, "policy": "heuristic_calibrated", "n": 32, "return": 106.48, "win": 0.969, "kills": 59.3, "core": 0.769, "len": 2197, "secs": 102}
+{"stage": 4, "overrides": {"enemy_bullet_damage": 14.0}, "policy": "heuristic_calibrated", "n": 32, "return": 101.45, "win": 0.969, "kills": 56.1, "core": 0.601, "len": 2178, "secs": 97}
+{"stage": 4, "overrides": {"core_contact_mult": 0.07}, "policy": "heuristic_calibrated", "n": 32, "return": 105.61, "win": 1.0, "kills": 57.6, "core": 0.833, "len": 2200, "secs": 99}
+{"stage": 4, "overrides": {"enemy_speed_mult": 1.35}, "policy": "heuristic_calibrated", "n": 32, "return": 108.42, "win": 0.969, "kills": 59.8, "core": 0.808, "len": 2197, "secs": 97}
+{"stage": 4, "overrides": {"enemy_bullet_damage": 20.0}, "policy": "heuristic_calibrated", "n": 32, "return": 88.48, "win": 0.5, "kills": 50.9, "core": 0.189, "len": 1988, "secs": 88}
+{"stage": 4, "overrides": {"enemy_bullet_damage": 26.0}, "policy": "heuristic_calibrated", "n": 32, "return": 65.52, "win": 0.219, "kills": 39.3, "core": 0.062, "len": 1554, "secs": 66}
+{"stage": 4, "overrides": {"enemy_bullet_damage": 17.0}, "policy": "heuristic_calibrated", "n": 32, "return": 98.58, "win": 0.906, "kills": 55.4, "core": 0.392, "len": 2152, "secs": 95}
+{"stage": 4, "overrides": {"enemy_bullet_damage": 18.5}, "policy": "heuristic_calibrated", "n": 32, "return": 94.63, "win": 0.719, "kills": 53.9, "core": 0.262, "len": 2095, "secs": 93}
+{"stage": 4, "overrides": {"enemy_bullet_damage": 17.0}, "policy": "heuristic_calibrated", "n": 96, "return": 98.72, "win": 0.802, "kills": 55.8, "core": 0.314, "len": 2139, "secs": 288}
+{"stage": 4, "overrides": {"enemy_bullet_damage": 17.5}, "policy": "heuristic_calibrated", "n": 96, "return": 97.22, "win": 0.719, "kills": 55.1, "core": 0.287, "len": 2115, "secs": 285}
+{"stage": 3, "overrides": {}, "policy": "heuristic_calibrated", "n": 96, "return": 85.53, "win": 0.833, "kills": 41.3, "core": 0.25, "len": 1972, "secs": 166}

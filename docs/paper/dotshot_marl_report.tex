@@ -1,0 +1,623 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{definition}{Definition}
+\newtheorem{lemma}{Lemma}
+
+\title{DotShot: A Four-Stage Curriculum for Cooperative Multi-Agent Reinforcement Learning, and What It Took to Make It Learnable}
+\author{DotShot Research Engineering}
+\date{November 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+DotShot is a 2D arena shooter with a four-stage curriculum for single- and multi-agent reinforcement learning: aiming, choosing the counter element among three, defending a shared Core with two agents under partial observability, and doing so with a heterogeneous squad of tank, damage dealer and healer. We describe the simulator (v2.2), connect Stable-Baselines3 PPO and the reference implementations of MAPPO, HAPPO, HATRPO, HAA2C and MAT to it, and evaluate them with per-learner hyperparameter searches, five seeds, held-out test episodes and a behaviour audit. A first round of results was withdrawn after an audit found integration bugs and a reward loophole that made dying the best strategy; we document the changes to the environment that made the cooperative stages learnable. PPO solves Stage 1 and, started from its Stage 1 policy, doubles the Stage 2 return of training from scratch. On the cooperative stages, learners initialised by cloning a scripted expert and fine-tuned for 4M ticks reach the expert on Stage 3 and beat it on Stage 4: MAPPO wins 88\% of test episodes against 75\% for the expert. From scratch, the learners that share parameters across agents learn fastest, but after 16M ticks they still lose the Core in most episodes. On the heterogeneous stage, the shared-actor MAPPO outperforms the heterogeneous-agent methods designed for it.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Cooperative multi-agent reinforcement learning (MARL) studies how agents that each see only part of the world learn to act as a team~\cite{oliehoek2016decpomdp,albrecht2024marl}. Most benchmarks either abstract away projectile physics or give agents small discrete action menus, and many introduce role asymmetry only in late custom maps.
+
+DotShot is a 2D arena shooter built to test cooperative learners one difficulty at a time. Agents move, aim in 32 directions and fire one of three elemental weapons; a weapon only damages enemies of the element it counters. Four stages build on each other. Stage 1 teaches aiming and moving with a single agent and a single enemy element. Stage 2 adds all three elements, enemies that shoot back and neutral allies that must not be hit. Stage 3 asks two agents to defend a central Core under partial observability against waves that include shielded bosses. Stage 4 replaces the two identical agents with a heterogeneous squad: a tank, a damage dealer and a healer.
+
+This report describes the simulator in its current version (v2.2), the learners we train on it, and the results. It also describes how we got there, because the first round of results was wrong. An audit found bugs in how the upstream learners were connected to the simulator, a reward loophole that made dying the best strategy, and a tuning protocol that selected noise. Fixing the code was not enough; the simulator also had to change before any learner made progress on the cooperative stages. We document those steps and the experiment behind each decision, together with the behaviour checks we use to confirm that a high return comes from playing the game.
+
+The contributions are:
+\begin{enumerate}
+    \item \textbf{A curriculum simulator with a fully specified interface.} Section~\ref{sec:simulator} gives the rules, the 166-value observation, the global state and every reward term of DotShot v2.2, and explains the design choices that made the cooperative stages learnable.
+    \item \textbf{A corrected integration of reference learners.} Stable-Baselines3 PPO~\cite{schulman2017ppo} for the single-agent stages, and the pinned HARL~\cite{zhong2024harl} (MAPPO, HAPPO, HATRPO, HAA2C) and MAT~\cite{wen2022mat} implementations for the multi-agent stages, connected without modifying upstream code (Section~\ref{sec:pipeline}).
+    \item \textbf{A reproducible evaluation.} Per-learner hyperparameter searches, five seeds per configuration, scoring on held-out episode seeds, scripted baselines under the same evaluator, and a behaviour audit that rejects degenerate policies (Sections~\ref{sec:protocol} and~\ref{sec:results}).
+\end{enumerate}
+
+\section{Background}
+\label{sec:background}
+
+\subsection{Single-Agent Policy Optimization}
+
+A single-agent task is a Markov Decision Process (MDP) $\mathcal{M} = \langle \mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma \rangle$~\cite{sutton2018rl}. A stochastic policy $\pi_\theta(a_t \mid s_t)$ maximises the expected discounted return $J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\!\left[\sum_{t=0}^{\infty} \gamma^t r_t\right]$. Policy-gradient methods ascend $J$ directly using the Policy Gradient Theorem~\cite{sutton1999policy}:
+\begin{equation}
+\nabla_\theta J(\theta) = \mathbb{E}_{s \sim \rho^\pi, \, a \sim \pi_\theta}\!\left[ \nabla_\theta \log \pi_\theta(a \mid s) \, A^\pi(s, a) \right],
+\end{equation}
+where $A^\pi(s, a) = Q^\pi(s, a) - V^\pi(s)$ is the advantage. Generalized Advantage Estimation (GAE)~\cite{schulman2016gae} estimates it from rollouts by weighting temporal-difference residuals $\delta_t = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t)$:
+\begin{equation}
+\hat{A}_t = \sum_{l=0}^{\infty} (\gamma \lambda)^l \delta_{t+l}.
+\end{equation}
+Large policy steps shift the state distribution faster than the critic can follow. TRPO~\cite{schulman2015trpo} bounds each step by a KL-divergence constraint; PPO~\cite{schulman2017ppo} obtains similar stability with first-order updates on the clipped importance ratio $\rho_t(\theta) = \pi_\theta(a_t \mid s_t) / \pi_{\theta_{\text{old}}}(a_t \mid s_t)$:
+\begin{equation}
+\mathcal{L}^{\text{CLIP}}(\theta) = \mathbb{E}_t \!\left[ \min\!\left( \rho_t(\theta) \hat{A}_t, \; \text{clip}(\rho_t(\theta), 1 - \epsilon, 1 + \epsilon) \hat{A}_t \right) \right].
+\end{equation}
+The ratio is the quantity that the first HARL integration got wrong (Section~\ref{sec:pipeline}): with four action branches, PPO must clip the ratio of the joint action, $\rho = \prod_{k=1}^{4} \rho^{(k)}$, and the first integration clipped $\rho^4$.
+
+\subsection{Cooperative Dec-POMDPs}
+
+With $n$ agents that share one objective and see only local observations, the standard model is the decentralized partially observable MDP (Dec-POMDP)~\cite{bernstein2002complexity,oliehoek2016decpomdp}
+\begin{equation}
+\mathcal{G} = \langle \mathcal{I}, \mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \Omega, \mathcal{O}, \gamma \rangle,
+\end{equation}
+with agents $\mathcal{I} = \{1, \dots, n\}$, joint actions $\mathbf{a}_t = (a_t^1, \dots, a_t^n) \in \prod_i \mathcal{A}_i$, a single team reward $\mathcal{R}(s_t, \mathbf{a}_t)$, and local observations $o_t^i \sim \mathcal{O}(\cdot \mid s_t, i)$. Learning each agent's policy independently~\cite{dewitt2020ippo} runs into four problems that DotShot exposes directly:
+
+\begin{enumerate}
+    \item \textbf{Non-stationarity.} From one agent's point of view, its teammates are part of the environment, and that environment changes as they learn.
+    \item \textbf{Credit assignment.} When the team breaks a boss shield, a shared reward reinforces every agent equally, including one that stood behind cover.
+    \item \textbf{Partial observability.} Cover blocks line of sight, so an agent may not see the enemy that is attacking the Core.
+    \item \textbf{Joint action size.} Each DotShot agent chooses among $3 \times 3 \times 32 \times 4 = 1{,}152$ actions, so a three-agent squad has $1{,}152^3 \approx 1.5 \times 10^9$ joint actions. Learners must factor the action, both across agents and within each agent~\cite{tavakoli2018branching}.
+\end{enumerate}
+
+\subsection{Centralized Training with Decentralized Execution}
+
+Centralized Training with Decentralized Execution (CTDE)~\cite{oliehoek2008optimal,kraemer2016ctde,amato2024ctde} lets a critic read the global state during training while each actor acts on its own observation at test time. Value-factorisation methods such as VDN~\cite{sunehag2018vdn}, QMIX~\cite{rashid2018qmix}, QTRAN~\cite{son2019qtran} and QPLEX~\cite{wang2021qplex} learn per-agent utilities whose combination satisfies the Individual-Global-Max condition; actor-critic methods such as MADDPG~\cite{lowe2017maddpg}, COMA~\cite{foerster2018coma} and MA-POCA~\cite{cohen2022mapoca} train decentralized actors against a centralized critic. This report uses five on-policy CTDE learners, summarised in Table~\ref{tab:learners}.
+
+\textbf{MAPPO}~\cite{yu2022mappo} applies PPO to every agent with one shared actor and a centralized value function. Yu et al.\ show that it matches off-policy methods when value normalisation, a good global state, moderate clipping, large batches and masking of dead agents are in place.
+
+\textbf{HAPPO and HATRPO}~\cite{kuba2022happo} drop parameter sharing and update the agents one after another in a random order. Their basis is an exact decomposition of the joint advantage:
+\begin{lemma}[Multi-Agent Advantage Decomposition~\cite{kuba2022happo}]
+For any joint policy $\boldsymbol{\pi}$, state $s$ and ordered agent subset $i_{1:m}$,
+\begin{equation}
+A_{\boldsymbol{\pi}}^{i_{1:m}}(s, \mathbf{a}^{i_{1:m}}) = \sum_{j=1}^m A_{\boldsymbol{\pi}}^{i_j}\!\left(s, \mathbf{a}^{i_{1:j-1}}, a^{i_j}\right).
+\end{equation}
+\end{lemma}
+Agent $i_m$ is updated against the advantage reweighted by the ratios of the agents already updated, $M^{i_{1:m}} = \prod_{j<m} \pi^{i_j}_{\text{new}}(a^{i_j} \mid o^{i_j}) / \pi^{i_j}_{\text{old}}(a^{i_j} \mid o^{i_j}) \cdot \hat{A}$. HAPPO clips each agent's ratio like PPO; HATRPO solves a KL-constrained step. Both assume one shared team reward. \textbf{HAA2C} is the advantage actor-critic member of the same family, without clipping or a trust region. Zhong et al.~\cite{zhong2024harl} unify the three under Heterogeneous-Agent Mirror Learning with monotonic-improvement guarantees and release them in the HARL library.
+
+\textbf{MAT}~\cite{wen2022mat} treats the team as a sequence. A transformer encoder reads all observations and estimates the value; a decoder then emits the agents' actions one after another, each conditioned on the actions already chosen. MAT therefore coordinates actions explicitly, but needs every agent's observation at execution time.
+
+\begin{table}[t]
+\centering
+\caption{The learners used in this report. ``Sharing'' refers to the actor parameters.}
+\label{tab:learners}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llllll@{}}
+\toprule
+Learner & Stages & Update & Sharing & Critic input & Implementation \\
+\midrule
+PPO~\cite{schulman2017ppo} & 1--2 & clipped ratio & -- & own observation & Stable-Baselines3 \\
+MAPPO~\cite{yu2022mappo} & 3--4 & clipped ratio, simultaneous & shared & global state & HARL \\
+HAPPO~\cite{kuba2022happo} & 3--4 & clipped ratio, sequential & none & global state & HARL \\
+HATRPO~\cite{kuba2022happo} & 3--4 & KL trust region, sequential & none & global state & HARL \\
+HAA2C~\cite{zhong2024harl} & 3--4 & advantage actor-critic, sequential & none & global state & HARL \\
+MAT~\cite{wen2022mat} & 3--4 & clipped ratio, autoregressive & shared & all observations & MAT \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+Agarwal et al.~\cite{agarwal2021rliable} and Gorsane et al.~\cite{gorsane2022marleval} show that single-seed results and raw means mislead RL comparisons. We follow their recommendations: several seeds, held-out evaluation episodes, and interval estimates (Section~\ref{sec:protocol}).
+
+\section{The DotShot Simulator (v2.2)}
+\label{sec:simulator}
+
+\subsection{Engine, Interfaces and Time}
+
+The simulator is pure Python and NumPy. \texttt{DotShotEngine} holds the physics and the reward; a Gymnasium environment exposes Stages 1--2 and a PettingZoo \texttt{ParallelEnv} with an explicit \texttt{state()} exposes Stages 3--4. A separate Pygame renderer draws the same state for replays (Figure~\ref{fig:screenshots}).
+
+The engine advances in \emph{ticks}. Agents choose a new action every $k = 8$ ticks; the action is held for those ticks and their rewards are summed into one transition, which we call a \emph{decision}. Training budgets are reported in ticks. Section~\ref{sec:dev-repeat} explains why the interval is 8 and not 1.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/stage1_cover_combat.png}
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/stage2_elemental_mastery.png}\\[2pt]
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/stage3_coop_boss_overlay.png}
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/stage4_heterogeneous_squad.png}
+\caption{The four stages, played by the final trained policies on held-out test episodes. Top left, Stage 1 (PPO): the Striker (white) fires Water at Fire enemies (orange triangles) between four pillars. Top right, Stage 2 (PPO transferred from Stage 1): the Striker, bottom right, fires Fire at a Grass enemy (green square) while Water (blue circle) and Fire enemies approach and two unarmed neutral allies (small white circles) cross the arena. Bottom left, Stage 3 (MAT): one Striker breaks a Water boss's shield with Grass while the other covers the south of the Core (ring in the centre). Bottom right, Stage 4 (MAPPO): the Vanguard's Aegis is up, the Support's Pulse marks an enemy, and the squad converges on it. Thin lines are the renderer's aim and LIDAR overlay.}
+\label{fig:screenshots}
+\end{figure}
+
+\subsection{The Four Stages}
+
+Table~\ref{tab:stages} lists the stage settings. The arena is $1440 \times 960$ px. Obstacles stop bullets and block line of sight; a bullet that hits one disappears without penalty. Water beats Fire, Grass beats Water and Fire beats Grass. A bullet of any other element deals no damage.
+
+\begin{table}[t]
+\centering
+\caption{Stage settings in DotShot v2.2.}
+\label{tab:stages}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lllll@{}}
+\toprule
+ & Stage 1 & Stage 2 & Stage 3 & Stage 4 \\
+\midrule
+Agents & 1 Striker & 1 Striker & 2 Strikers & Vanguard, Striker, Support \\
+Enemy elements & Fire & all three & all three & all three \\
+Max.\ enemies at once & 4 & 6 & 8 & 10 \\
+Enemies shoot & no & yes (10 dmg) & yes (10 dmg) & yes (17 dmg) \\
+Neutral allies & no & up to 2 & no & no \\
+Bosses & no & no & after every 8 kills & after every 7 kills \\
+Core & no & no & 500 HP & 550 HP \\
+Vision & full & full & 760 px, line of sight & 760 px, line of sight \\
+On death & episode ends & episode ends & respawn after 150 ticks & respawn after 150 ticks \\
+Episode limit (ticks) & 1{,}500 & 1{,}800 & 2{,}000 & 2{,}200 \\
+Win & survive to the limit & survive to the limit & limit with Core alive & limit with Core alive \\
+Reward & individual & individual & shared team & shared team \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\paragraph{Agents.} A Striker has 100 HP, moves at 4.8 px/tick and fires a 34-damage bullet every 12 ticks. A Vanguard has 180 HP, moves at 3.5 px/tick and fires every 16 ticks for 28 damage. A Support has 115 HP, moves at 4.3 px/tick and fires every 14 ticks for 24 damage. On Stage 4 the hold-fire action triggers the class ability when it is ready. The Vanguard's \emph{Aegis} cuts incoming damage to 35\% for 90 ticks and pulls enemies within 420 px toward the Vanguard. The Support's \emph{Pulse} heals the Core by 26 HP and nearby teammates by 22 HP, and marks the two nearest enemies for 150 ticks; a marked enemy takes 35\% more damage.
+
+\paragraph{Enemies.} Water, Grass and Fire enemies differ in health (95, 140, 72 HP), speed (2.0, 1.35, 2.75 px/tick) and contact damage. On Stages 3--4 half of them walk to the Core and the rest chase the nearest agent. From Stage 2 on they fire at targets within 560 px in line of sight every 75--130 ticks. Every 10 team kills starts a new wave, which raises enemy health, speed and spawn rate. A boss has 2.8 times the health, deals 1.4 times the damage and carries a 110 HP elemental shield that only counter-element hits can break; a broken shield leaves the boss open to 35\% extra damage for 160 ticks.
+
+\paragraph{Respawn and victory.} On Stages 3--4 a dead agent returns at its starting position after 150 ticks. Only the destruction of the Core ends an episode early. Reaching the tick limit with the Core alive is a terminal victory that pays a team bonus of $20 \times$ the remaining Core HP fraction (raw units). The step is marked terminal because HARL discards the reward of steps marked as truncated.
+
+\subsection{Actions, Observations and State}
+
+Every agent acts in \texttt{MultiDiscrete([3, 3, 32, 4])}: horizontal move, vertical move, one of 32 aim directions ($11.25^\circ$ apart), and hold fire or fire Water, Grass or Fire. A shot leaves only when the fire cooldown has expired and fewer than two of the agent's bullets are already flying toward the enemy on the aim ray.
+
+The local observation $o_i \in [-1, 1]^{166}$ has eight blocks (Table~\ref{tab:obs}). On Stages 3--4 only enemies within 760 px and in line of sight are included. Dead agents observe zeros. Centralised critics receive the global state $s$ (241 values on Stage 3, 287 on Stage 4): every agent's absolute state with its shield and respawn timers, the Core, every enemy, up to 16 enemy projectiles, and the wave, enemy count, boss flag and episode progress.
+
+\begin{table}[t]
+\centering
+\caption{The 166-value local observation.}
+\label{tab:obs}
+\small
+\begin{tabular}{@{}lrl@{}}
+\toprule
+Block & Size & Contents \\
+\midrule
+Self & 14 & position, velocity, HP, cooldowns, alive, last weapon, class \\
+Core & 5 & direction, distance, HP, under attack \\
+LIDAR & 8 & obstacle and wall distances on 8 rays \\
+Enemies & $5 \times 15$ & nearest visible: position, bearing, distance, velocity, HP, shield, element, boss, marked \\
+Teammates & $3 \times 9$ & nearest teammates or neutral allies: position, distance, HP, type, alive \\
+Projectiles & $4 \times 7$ & incoming enemy bullets: position, velocity, time and distance of closest approach \\
+Status & 5 & Aegis timer, episode progress, direction to the enemy nearest the Core \\
+Crosshair & 4 & element of the enemy on the current aim ray \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reward}
+\label{sec:reward}
+
+The reward is a sum of named terms divided by 10 (Table~\ref{tab:reward}). Each decision sums its 8 ticks. On Stages 1--2 the agent receives its individual terms. On Stages 3--4 every agent, alive or dead, receives the same team reward
+\begin{equation}
+r^t = \frac{1}{n}\sum_{i=1}^{n} r^t_{i,\text{indiv}} + r^t_\text{team}.
+\end{equation}
+HAPPO and HATRPO assume one shared reward, and a critic that sees only the global state cannot predict a reward that depends on which agent receives it. Evaluations log every term separately, so a change in return can always be traced to the terms that produced it.
+
+\begin{table}[t]
+\centering
+\caption{Reward terms in raw units (the reward is their sum divided by 10).}
+\label{tab:reward}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lrl@{\hskip 18pt}lrl@{}}
+\toprule
+\multicolumn{3}{c}{Individual terms (per agent)} & \multicolumn{3}{c}{Team terms} \\
+\midrule
+correct hit & $+2.2$ & per hit & kill & $+2.5$ & per enemy \\
+precision hit & $+0.8$ & correct hit, well aimed & boss kill & $+8.0$ & per boss \\
+kill & $+5.0$ & per kill & shield break & $+3.5$ & per shield \\
+boss kill & $+10.0$ & per boss & combo kill & $+4.0$ & per combo \\
+shield break & $+4.5$ & per shield & new wave & $+6.0$ & per wave \\
+combo kill & $+5.0$ & per combo & Core healed & $+0.04$ & per HP \\
+aim shaping & $+0.2\cos^2\theta$ & per shot & Core alive & $+0.02$ & per tick \\
+element credit & $+1.5 / -0.75$ & per shot, right / wrong & Core damage & $-0.08$ & per HP \\
+Aegis absorbed, healed & $+0.05$ & per HP & Core destroyed & $-12.0$ & once \\
+enemy marked & $+0.8$ & per enemy & agent died & $-3.0$ & per tick with a death \\
+survival & $+0.015$ & per tick & victory & $+20 \times$ Core HP & once \\
+wrong-element hit & $-0.2$ & per hit & & & \\
+unaimed miss & $-0.04$ & per bullet leaving the arena & & & \\
+neutral hit / kill & $-2.0 / -5.0$ & Stage 2 & & & \\
+damage taken & $-0.2$ & per HP & & & \\
+enemy proximity & $-0.15 \times$ danger & per tick, within 140 px & & & \\
+pushing into a wall & $-0.02$ & per tick & & & \\
+death & $-5.0$ & once & & & \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+Two shaping terms deserve a note, because earlier versions of both taught the wrong behaviour (Section~\ref{sec:dev}). \emph{Aim shaping} is paid only when the agent fires, by the squared cosine between its aim and the lead point of the priority threat: the enemy nearest the Core when one is within 300 px of it, otherwise the nearest visible enemy. The \emph{element credit} is paid when a shot leaves toward an enemy: $+1.5$ for the counter element and $-0.75$ for either other element. A weapon chosen uniformly at random is right one time in three, so its expected credit is $\tfrac{1}{3}(1.5) - \tfrac{2}{3}(0.75) = 0$: the term rewards choosing well without making firing itself look costly.
+
+\subsection{Difficulty Calibration and Behaviour Audit}
+
+The difficulty was calibrated against a scripted policy, \texttt{heuristic\_calibrated}, that dodges projectiles, keeps a 240 px guard ring around the Core, leads its shots, picks the counter element and uses the Stage 4 abilities. One parameter was changed at a time and scored on 32--96 validation episodes. With the v2.1 settings this script won every Stage 4 episode, so Stage 4 enemy projectiles now deal 17 instead of 10 damage. At the final settings it wins 78.1\% of Stage 3 and 75.0\% of Stage 4 test episodes (Table~\ref{tab:baselines}).
+
+A high return can hide a degenerate strategy, so every evaluation also records the share of ticks spent holding fire and moving, shots per 100 ticks, deaths per episode and the mean distance to the Core. Runs are flagged when agents move less than 15\% of the time, hold fire more than 80\% of the time, die more than 3 times per 1{,}000 ticks, or choose elements no better than chance. Every policy reported in Section~\ref{sec:results} passed these checks.
+
+\section{Learning Pipeline}
+\label{sec:pipeline}
+
+\subsection{Single-Agent Stages: PPO}
+
+Stages 1--2 use Stable-Baselines3 \texttt{PPO} with an MLP policy, one categorical head per action branch and 8 parallel environments. A Stage 2 run can start from a Stage 1 policy (\emph{transfer}). Stage 1 has only Fire enemies, so the weapon branch of a Stage 1 policy collapses onto Water; transfer therefore resets that branch to a uniform distribution and keeps the rest of the network.
+
+\subsection{Multi-Agent Stages: HARL and MAT}
+
+HARL and MAT are pinned as git submodules and never edited. Adapters convert the PettingZoo environment to their formats, and every correction is applied from outside and pinned by a unit test that runs through the real update path. Table~\ref{tab:defects} lists the defects of the first integration, which together kept every Stage 3--4 learner at random level, and their fixes.
+
+\begin{table}[t]
+\centering
+\caption{Defects of the first HARL/MAT integration and their fixes.}
+\label{tab:defects}
+\small
+\begin{tabular}{@{}p{0.44\textwidth}p{0.50\textwidth}@{}}
+\toprule
+Defect & Fix \\
+\midrule
+HARL stored the joint log-probability in four buffer columns and multiplied the four ratios, so PPO clipped $\rho^4$ instead of $\rho$. & Aggregate the columns by their mean, which recovers the true joint ratio. \\
+HARL's multi-discrete entropy built a $(B, B)$ tensor. & Per-branch entropy, masked for inactive agents. \\
+Dead agents were never masked, so their frozen observations entered the loss. & Report dead agents as done so HARL's active masks drop them, but never all agents at once mid-episode. \\
+Each agent learned from its own mixed reward while the critic saw one global state. & One shared team reward and an environment-provided (EP) critic. \\
+``Shared'' MAPPO ran unshared on Stage 4. & One shared MAPPO actor on both stages. \\
+No learning-rate decay; few gradient steps per sample. & Linear decay and configurable minibatches. \\
+MAT acted through a continuous Gaussian adapter. & Four categorical heads $(3, 3, 32, 4)$; MAT still decodes agents one by one. \\
+MAT treated time-limit ends as terminal. & Add $\gamma V(s_T)$ to the last reward of truncated episodes. \\
+MAT's evaluation over-sampled short episodes. & One evaluator for every learner (Section~\ref{sec:protocol}). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Warm Starts}
+
+From random weights, Stage 3--4 learners need tens of millions of ticks to learn to defend the Core (Section~\ref{sec:dev-learn}). We therefore also train from a demonstration. The actor is cloned from 200 episodes of \texttt{heuristic\_calibrated} by maximum likelihood over 30 epochs; the critic then receives 10 critic-only updates so that the first policy updates do not use advantages from an untrained value function; after that, RL proceeds as usual. The demonstration episodes use seeds that are disjoint from the evaluation seeds. Warm-started runs are always reported in their own rows, next to runs from scratch.
+
+\subsection{Hyperparameter Search}
+\label{sec:tuning}
+
+Each stage and learner has its own Optuna~\cite{akiba2019optuna} study: Stage 1 and Stage 2 PPO, and Stages 3 and 4 for each of the five multi-agent learners, twelve studies in all. A study runs 24 trials with a multivariate TPE sampler and Hyperband pruning between 1M and 4M ticks (reduction factor 3), a BOHB-style combination~\cite{falkner2018bohb}. Trials report every 0.5M ticks on 16 validation episodes of their first seed. A trial that reaches the full budget also trains a second seed, and its objective is the mean final-policy return of both seeds on 32 validation episodes. The search covers learning rates, entropy coefficient, clipping or KL threshold, epochs, minibatches, $\gamma$, $\lambda$, network width and, for MAT, the transformer size. The warm start (scratch or cloned; scratch or transfer on Stage 2) is itself a searched parameter, and the best trial of each kind is retrained at the final budget. Each Stage 4 study starts from the best Stage 3 configuration of the same learner. Stage 1--3 studies ran 24 trials; the Stage 4 studies were stopped at 16, because each started from a strong configuration and later trials rarely improved on it.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/tuning_stage34.png}
+\caption{The Stage 3--4 searches: every completed trial (circles: cloned start; crosses: scratch) and the best value so far per learner. Cloned starts reach 80--89 on Stage 3 and 96--109 on Stage 4 within a few trials; the few scratch trials that were not pruned stay below zero.}
+\label{fig:tuning}
+\end{figure}
+
+Figure~\ref{fig:tuning} shows the outcome. The warm start decides most of the objective: every best Stage 3--4 trial starts from the cloned script, and the best scratch trials stay between $-5.5$ and $-1.8$, because 4M ticks is too short for a scratch learner to leave the random level (Section~\ref{sec:dev-learn}). Among the remaining hyperparameters, a functional-ANOVA analysis of the completed trials attributes most of the variance to the entropy coefficient and the learning rates in every study; network width, epochs and minibatch counts matter little. Since the search could not rank scratch configurations, the final scratch runs use one standard configuration for every learner, the one that learned Stage 3 in the 24M-tick development run.
+
+\section{Evaluation Protocol and Baselines}
+\label{sec:protocol}
+
+Every learner and every scripted baseline goes through one evaluator. Episode seeds come from two disjoint sets: a validation set for curves, pruning and tuning, and a test set for the final score. An evaluation plays exactly the requested number of episodes. After training, the final policy (never the best checkpoint) is scored once on 32 test episodes. Each configuration is trained with 5 seeds. We report the mean over seeds with a 95\% percentile bootstrap interval, and the interquartile mean (IQM)~\cite{agarwal2021rliable} where at least four values are available. Returns are per-agent episode returns under the reward of Section~\ref{sec:reward}.
+
+Table~\ref{tab:baselines} gives the scripted baselines on 96 test episodes each. \texttt{charge} walks into the nearest enemy and never fires. \texttt{heuristic\_nearest} shoots the nearest enemy with the right element; \texttt{heuristic\_core\_guard} stays at the Core and shoots what approaches.
+
+\begin{table}[t]
+\centering
+\caption{Scripted baselines on Stages 3--4 (96 test episodes each, $k = 8$). Return: mean with 95\% bootstrap CI.}
+\label{tab:baselines}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llccccccc@{}}
+\toprule
+Stage & Policy & Return [95\% CI] & Win & Kills & Core HP & Elem.\ acc. & Move & Deaths \\
+\midrule
+3 & random & $-6.54\;[-6.76, -6.30]$ & 0.0\% & 0.1 & 0.0\% & 33.2\% & 0.89 & 1.62 \\
+3 & noop & $-7.32\;[-7.47, -7.16]$ & 0.0\% & 0.0 & 0.0\% & -- & 0.00 & 1.83 \\
+3 & charge & $-9.96\;[-10.21, -9.72]$ & 0.0\% & 0.0 & 0.0\% & -- & 0.92 & 3.02 \\
+3 & heuristic\_nearest & $73.19\;[69.20, 77.08]$ & 43.8\% & 34.0 & 13.9\% & 94.3\% & 0.21 & 0.74 \\
+3 & heuristic\_core\_guard & $64.97\;[60.91, 68.97]$ & 58.3\% & 30.6 & 28.5\% & 93.5\% & 0.00 & 2.45 \\
+3 & heuristic\_calibrated & $87.59\;[83.97, 91.15]$ & 78.1\% & 37.9 & 21.1\% & 94.1\% & 0.23 & 0.02 \\
+\midrule
+4 & random & $-7.71\;[-7.97, -7.48]$ & 0.0\% & 0.2 & 0.0\% & 34.3\% & 0.89 & 2.17 \\
+4 & noop & $-9.07\;[-9.23, -8.92]$ & 0.0\% & 0.0 & 0.0\% & -- & 0.00 & 2.73 \\
+4 & charge & $-11.68\;[-11.94, -11.41]$ & 0.0\% & 0.0 & 0.0\% & -- & 0.85 & 4.43 \\
+4 & heuristic\_nearest & $56.98\;[53.66, 60.30]$ & 3.1\% & 33.1 & 1.4\% & 93.9\% & 0.27 & 0.71 \\
+4 & heuristic\_core\_guard & $46.68\;[42.74, 50.86]$ & 9.4\% & 29.4 & 3.0\% & 91.4\% & 0.00 & 4.32 \\
+4 & heuristic\_calibrated & $100.17\;[96.89, 103.34]$ & 75.0\% & 52.3 & 31.0\% & 89.9\% & 0.34 & 0.22 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\section{How the Benchmark Became Learnable}
+\label{sec:dev}
+
+This section summarises the development experiments that led to the final setup. They are single runs or short multi-seed checks. We report them because each one justifies a design decision; the benchmark results follow in Section~
+ef{sec:results}, and the detailed records are in the experiment log of the handbook.
+
+\subsection{The First Results and the Suicide Trap}
+
+The first Milestone 3 results reported Optuna-tuned runs for all four stages, with every Stage 3--4 learner stuck near random level. Besides the integration defects of Table~\ref{tab:defects}, the tuning had been done for HARL-MAPPO on Stage 3 only and copied to every other learner and to Stage 4, with one seed per trial and the best checkpoint as the objective. Those results are withdrawn.
+
+The environment had a deeper problem. In DotShot v2.1, a Stage 3--4 episode also ended when every agent was dead, and the Core-damage penalties stopped with it. On 32 test episodes \texttt{charge} returned $-1.05$ on Stage 3 and $-1.25$ on Stage 4, better than \texttt{noop} ($-1.66$, $-2.30$), \texttt{random} ($-1.72$, $-2.42$) and every learner of the withdrawn tables. For a team that had not yet learned to shoot, dying quickly was the best available strategy.
+
+\subsection{Fixing the Learners Was Not Enough}
+
+With every fix of Table~\ref{tab:defects} in place, HARL-MAPPO trained on the v2.1 rules for 2M ticks on 5 seeds returned $-2.37\;[-2.74, -2.01]$ with 0.78 kills per episode, against a planned acceptance gate of at least 3 kills. Its reward breakdown showed why. Aim shaping, then paid every tick for pointing at the current position of the nearest enemy, earned $+1.28$ per episode, 3.6 times the reward for correct hits; elemental accuracy stayed at chance; the policy entropy stayed close to its maximum. The learner earned more for pointing at enemies than for hitting them.
+
+\subsection{DotShot v2.2}
+
+DotShot v2.2 addressed these problems in the environment: respawn and terminal victory (so that dying is never rewarded), projectile, status and crosshair observations (agents could not see enemy bullets before), aim shaping only on firing ticks and toward the lead point, the fire-time element credit, two bullets in flight per target, and the calibration of Stage 4.
+
+Two of these changes were themselves revised after diagnostics. A first element credit of $\pm 0.6$ had a negative expected value for an uncertain shot, and the trained policy held fire on 40\% of its actions while hitting with the wrong element three times as often as with the right one. The asymmetric $+c / -c/2$ form removed that incentive. At $c = 0.6$, however, Stage 2 PPO still fired Water on 74\% of its shots whatever the target, so the crosshair block was added and $c$ was raised to 1.5. The first v2.2 HARL adapter also ended the episode whenever all agents happened to be dead at once, which brought the suicide trap back inside HARL training; dead agents are now never all reported done before the episode ends.
+
+A second 5-seed gate on v2.2 (at one decision per tick) improved the return to $-1.64\;[-1.98, -1.23]$ but still averaged only 1.84 kills. Validation kills were still rising on every seed when the learning rate decayed to zero.
+
+\subsection{One Decision Every Eight Ticks}
+\label{sec:dev-repeat}
+
+A shot leaves only every 12--16 ticks. At one decision per tick, the aim and weapon branches therefore mattered on about one tick in twelve, and on the other ticks their gradient was noise. Holding each action for $k$ ticks fixes this. On Stage 2, PPO trained for 2M ticks won 96.9\% of test episodes at $k = 8$ and 62.5\% at $k = 4$ (one seed each), against 6.2\% after 1M ticks at $k = 1$. Stage 1 PPO reached 100\% wins at $k = 8$. HARL also trains three times faster per tick, because it runs the policy eight times less often. We adopted $k = 8$ for all stages and all baselines.
+
+\subsection{What Makes Stage 3 Learnable}
+\label{sec:dev-learn}
+
+At $k = 8$, HARL-MAPPO from scratch on Stage 3 reached a positive return after 6M ticks but still lost the Core in every episode. We tested five remedies on single seeds. A GRU actor and a potential-based guard shaping~\cite{ng1999shaping} helped a little at 6M ticks; more gradient steps per sample made things worse. Two changes worked:
+
+\begin{itemize}
+    \item \textbf{A longer budget.} With a learning-rate schedule sized for 24M ticks, the same learner reached a test return of 53.05 (61\% of the calibrated script), 25\% wins, 24.6 kills per episode and 90.1\% elemental accuracy, with a normal behaviour profile (moving 93\% of the time, holding fire 13\%, 0.4 deaths per episode). Its validation curve was still rising: 3.3 at 6M ticks, 29.7 at 12M, 48.5 at 20M and 63.1 at 24M.
+    \item \textbf{Cloning the script.} A first clone, trained on 40 episodes for 3 epochs, always chose ``stay'' and never moved; the behaviour audit flagged it immediately. With 200 episodes and 30 epochs, the clone plays by itself (validation return 52.76, 37.5\% wins), and 2M ticks of RL with critic warm-up raise it to a test return of 68.69 and 50\% wins instead of erasing it.
+\end{itemize}
+
+On Stage 2, starting PPO from the Stage 1 policy with a reset weapon head raised elemental accuracy after 1.2M ticks from 58.2\% to 83.1\%. These results set the final protocol: scratch and warm-started runs as separate rows, and scratch Stage 3--4 runs at much longer budgets than the tuning trials.
+
+\section{Results}
+\label{sec:results}
+
+Every row below has 5 seeds; each seed's final policy is scored on 32 test episodes. We report the mean over seeds with a 95\% bootstrap interval.
+
+\subsection{Stages 1 and 2: Aiming, Then Choosing the Element}
+
+\begin{table}[t]
+\centering
+\caption{Single-agent results after 4M ticks (5 seeds, 32 test episodes each). The transfer run starts from the Stage 1 policy of the same seed, with its weapon head reset.}
+\label{tab:results-stage12}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llcccccc@{}}
+\toprule
+Stage & Run & Return [95\% CI] & Win & Kills & Right element & Deaths & Moving \\
+\midrule
+1 & PPO from scratch & $43.15\;[39.85, 45.69]$ & 100.0\% & 20.4 & 100.0\% & 0.00 & 95\% \\
+2 & PPO from scratch & $22.46\;[21.35, 23.29]$ & 93.1\% & 8.6 & 77.8\% & 0.07 & 86\% \\
+2 & PPO from Stage 1 & $\mathbf{44.17}\;[42.46, 46.34]$ & 78.1\% & \textbf{18.7} & \textbf{91.6\%} & 0.22 & 98\% \\
+\midrule
+1 & random (96 ep.) & $-2.50$ & 0.0\% & 0.0 & 33.6\% & 1.00 & 89\% \\
+1 & heuristic (96 ep.) & $46.04$ & 96.9\% & 21.1 & 100.0\% & 0.03 & 34\% \\
+2 & random (96 ep.) & $-2.25$ & 0.0\% & 0.0 & 33.3\% & 1.00 & 89\% \\
+2 & heuristic (96 ep.) & $25.32$ & 0.0\% & 11.2 & 98.0\% & 1.00 & 37\% \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage12_curves.png}
+\caption{Validation curves of the single-agent runs (mean and 95\% bootstrap band over 5 seeds). Left: Stage 1 PPO levels off near a return of 43 after about 3M ticks. Middle and right: on Stage 2, the policy transferred from Stage 1 reaches twice the return of the scratch policy, and the share of hits with the right element climbs past 90\% within 1.5M ticks while the scratch policy stays below 80\%. The transferred policy starts at 0\%: its weapon head is reset to a uniform distribution, so the deterministic evaluation picks the first weapon action, which is to hold fire.}
+\label{fig:results-stage12}
+\end{figure}
+
+Table~\ref{tab:results-stage12} and Figure~\ref{fig:results-stage12} show the single-agent results. Stage 1 is solved: every seed wins all of its test episodes without dying. On Stage 2, starting from the Stage 1 policy doubles the return and the kills, and lifts the share of correct-element hits from 77.8\% to 91.6\%. The Stage 1 network already knows how to move and aim, so only the weapon choice has to be learned.
+
+The transferred policy wins fewer episodes, though: 78.1\% against 93.1\%. It is more aggressive. It moves 98\% of the time, engages more enemies at once and dies three times as often (0.22 against 0.07 deaths per episode); two of its five seeds win only 56--66\% of their episodes. The reward pays more for kills than for survival, and PPO follows it. A ranking by return alone would hide this trade-off.
+
+Shaping does not explain the gains. Aim shaping and the element credit together make up about a third of the transferred policy's return ($2.6 + 12.2$ of $44.2$). Both grow only with useful shots: the credit has zero expectation for a random weapon, and correct hits ($+15.3$) and kills ($+9.4$) rise in the same proportion. The agents fire 8.2 shots per 100 ticks, close to the Striker's maximum of 8.3.
+
+\subsection{Stage 3: Two Strikers Defending the Core}
+\label{sec:results-stage3}
+
+On Stages 3--4 every learner is trained twice. Runs started from the cloned script get 4M ticks of RL with their tuned configuration. Runs from scratch use one standard configuration for all learners, because the search could not rank scratch configurations at its 4M-tick budget. A scratch pilot (2 seeds, 8M ticks) ranks the five learners on validation episodes, and only the two best are trained for 16M ticks on the 5 evaluation seeds. On Stage 3 the pilot's mean final validation returns were 5.03 for MAT, 4.18 for MAPPO, 0.74 for HAA2C, $-0.03$ for HAPPO and $-1.56$ for HATRPO.
+
+\begin{table}[t]
+\centering
+\caption{Stage 3 results (5 seeds, 32 test episodes each). Cloned rows: 4M ticks of RL after behaviour cloning; scratch rows: 16M ticks. The scripted reference is scored on 96 test episodes.}
+\label{tab:results-stage3}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+Run & Return [95\% CI] & Win & Kills & Right element & Core HP & Deaths & Moving \\
+\midrule
+HAA2C, cloned & $\mathbf{84.87}\;[82.48, 87.26]$ & 63.1\% & 37.5 & 91.4\% & 21.4\% & 1.1 & 76\% \\
+MAT, cloned & $84.31\;[82.02, 87.08]$ & 63.1\% & 35.9 & 90.0\% & 17.8\% & 0.4 & 58\% \\
+MAPPO, cloned & $81.96\;[79.35, 84.99]$ & 61.3\% & 36.0 & 90.1\% & 19.5\% & 0.4 & 38\% \\
+HATRPO, cloned & $79.23\;[76.78, 81.77]$ & 61.3\% & 35.2 & 89.9\% & 21.4\% & 0.5 & 29\% \\
+HAPPO, cloned & $79.01\;[77.39, 80.54]$ & 56.9\% & 34.4 & 90.6\% & 17.9\% & 0.3 & 29\% \\
+\midrule
+MAPPO, scratch & $22.68\;[16.91, 28.83]$ & 1.2\% & 12.8 & 82.8\% & 0.3\% & 0.5 & 94\% \\
+MAT, scratch & $20.11\;[18.65, 21.78]$ & 0.0\% & 11.6 & 82.6\% & 0.0\% & 0.3 & 95\% \\
+\midrule
+scripted reference & $87.59\;[83.97, 91.15]$ & 78.1\% & 37.9 & 94.1\% & 21.1\% & 0.02 & 23\% \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage3_curves.png}
+\caption{Stage 3 validation curves (mean and 95\% bootstrap band over 5 seeds); the dashed line is the scripted reference's test return. Left: runs started from the cloned script stay flat for the first $\sim$0.5M ticks, while only the critic is trained, then climb from the clone's 55--62 to 80--87. HAPPO lags the others throughout. Right: from scratch, MAPPO and MAT follow almost the same curve and are still rising at 16M ticks.}
+\label{fig:results-stage3-curves}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage3_scores.png}
+\caption{Stage 3 test return and win rate per configuration (mean and 95\% bootstrap interval over 5 seeds). Filled circles: cloned start; open squares: scratch. Dashed line: scripted reference; dotted line: \texttt{noop}.}
+\label{fig:results-stage3-scores}
+\end{figure}
+
+Table~\ref{tab:results-stage3} and Figures~\ref{fig:results-stage3-curves} and~\ref{fig:results-stage3-scores} summarise Stage 3. All five learners improve substantially on the clone they start from, and all end within 9 points of the script. HAA2C and MAT lead, and their intervals do not overlap HAPPO's; the other differences are within seed noise. None of them reaches the script's win rate (57--63\% against 78\%), although the Core HP left at the end is the same. The learned teams fight as well as the script, but lose the Core slightly more often.
+
+HAA2C reaches the top return differently from the others. It moves 76\% of the time against 29--58\%, and dies 1.1 times per episode against 0.3--0.5. HAA2C has neither PPO's clipping nor a trust region, and its policy drifted furthest from the cautious clone; the extra kills pay for the extra deaths under this reward.
+
+From scratch, the picture is different. In the pilot only the two learners that share parameters across agents, MAPPO with one actor for both Strikers and MAT with one transformer, were clearly above zero at 8M ticks. HAPPO, HATRPO and HAA2C train one actor per agent, so each actor sees half of the data, and on a homogeneous team that halves the sample efficiency of the hardest part of learning. After 16M ticks MAPPO and MAT aim well and choose the right element 83\% of the time, but have not learned to defend the Core, which falls in almost every episode. The single 24M-tick run of Section~\ref{sec:dev-learn} reached a test return of 53, so the scratch curve keeps rising well beyond this budget.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage3_components.png}
+\caption{Where the Stage 3 return comes from: mean test return per reward group (Table~\ref{tab:reward}). Combat terms (hits, kills, bosses, combos, waves) dominate for every policy; shaping (aim and element credit) is about a fifth of the return of the cloned learners and of the script; penalties are mostly Core damage.}
+\label{fig:results-stage3-components}
+\end{figure}
+
+Figure~\ref{fig:results-stage3-components} splits the return by reward group. Combat terms dominate for every policy, and the shaping share (aim plus element credit, 17--18 of 79--85 points) matches the script's. The learned policies do not collect shaping that the script leaves on the table; they earn the same mix of rewards for the same behaviour.
+
+\paragraph{How the policies play.} For a closer look we replayed one representative run per configuration (the seed with the median test return) and the scripted reference on 16 test episodes, recording every agent's position, its distance to the Core, the weapon it chose and the element of the enemy under its aim at each decision, and the Core HP over time (Figures~\ref{fig:behaviour-stage3-maps} and~\ref{fig:behaviour-stage3-core}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/behaviour_stage3_heatmaps.png}
+\caption{Where the two Strikers spend their time on Stage 3 (16 test episodes per policy, both agents pooled, square-root colour scale). The red disc is the Core, the outlines are the six cover blocks. Every policy started from the cloned script stays inside the ring of cover, on average 86--111 px from the Core against 126 px for the script. The scratch policies drift along diagonal corridors after enemies.}
+\label{fig:behaviour-stage3-maps}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/behaviour_stage3_core_weapons.png}
+\caption{Left: Core HP over the episode, averaged over 16 test episodes (an episode that ended early keeps its final value). Even the scripted reference loses about four fifths of the Core over a full episode; the cloned-start policies follow the same slope, while the scratch policies lose the Core halfway through. Right: weapon chosen when an enemy of a given element is under the aim (rows sum to 100\%). The counter element is on the off-diagonal of this layout: Grass against Water, Fire against Grass, Water against Fire.}
+\label{fig:behaviour-stage3-core}
+\end{figure}
+
+Three things stand out. First, the cloned-start policies defend from closer in than the script that taught them: all of them stay inside the ring of cover blocks, 86--111 px from the Core on average, while the script keeps 126 px. A tighter ring is shorter for two agents to cover, which may be why RL moved them inward. Second, they lose the Core the same way the script does, slowly and steadily. In Figure~\ref{fig:behaviour-stage3-core} every cloned-start curve tracks the script's, and wins are decided in the last fifth of the episode by whether the Core still has HP. Third, element choice is solved: the HAA2C policy picks the counter element for 93--98\% of the enemies under its aim and never holds fire with a target in its sights, and even the scratch MAPPO policy picks it 80--86\% of the time.
+
+The scratch policies shoot reasonably well but position badly. Their position maps spread along diagonal corridors toward the arena edge, where they meet enemies early, and the Core, left alone, falls by the middle of the episode.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/results/s3_mat_shield_break.jpg}
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/results/s3_mat_tick1200.jpg}
+\caption{Stage 3, MAT started from the cloned script (median seed), held-out test episode. Left, tick 634: the Strikers split the work. The one east of the Core breaks the shield of a Water boss with Grass shots (\textsc{shield break}), while the other, south of the Core, fires Fire at a Grass enemy approaching from the south-east. Right, tick 1200: both Strikers are low on health and press against the Core while a second Water boss, shield intact, closes in from the south-west with Grass enemies on three sides. The Core falls at tick 1437. This is the typical way the learned policies lose: they hold position well but cannot clear a late wave that arrives with a boss while they are weak.}
+\label{fig:shots-stage3}
+\end{figure}
+
+Figure~\ref{fig:shots-stage3} shows both sides of this in one episode. Early on, the two agents divide the arena between them without any explicit communication: each covers one side of the Core and picks the counter element of its own target. Later, when a boss arrives while both are weakened, staying close to the Core is no longer enough. Neither agent retreats, and the Core falls with both still beside it. Under this reward a retreat has no direct payoff, while a death costs the team 0.55 of reward and the agent 150 ticks out of play.
+
+\subsection{Stage 4: A Heterogeneous Squad}
+\label{sec:results-stage4}
+
+Stage 4 follows the Stage 3 protocol. The scratch pilot ranked MAPPO first (4.01), then MAT (2.92), HAPPO (0.84), HAA2C ($-1.18$) and HATRPO ($-1.68$), so MAPPO and MAT were trained for 16M ticks.
+
+\begin{table}[t]
+\centering
+\caption{Stage 4 results (5 seeds, 32 test episodes each). Cloned rows: 4M ticks of RL after behaviour cloning; scratch rows: 16M ticks. The scripted reference is scored on 96 test episodes.}
+\label{tab:results-stage4}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+Run & Return [95\% CI] & Win & Kills & Right element & Core HP & Deaths & Moving \\
+\midrule
+MAPPO, cloned & $\mathbf{107.90}\;[106.69, 109.11]$ & \textbf{88.1\%} & 56.1 & 90.1\% & \textbf{49.1\%} & 0.1 & 70\% \\
+HAA2C, cloned & $103.95\;[102.75, 105.16]$ & 85.6\% & 55.0 & 88.6\% & 48.5\% & 0.2 & 73\% \\
+MAT, cloned & $100.93\;[99.21, 102.93]$ & 70.0\% & 52.9 & 87.5\% & 30.1\% & 0.0 & 34\% \\
+HATRPO, cloned & $99.40\;[97.07, 102.04]$ & 73.8\% & 52.8 & 87.5\% & 36.0\% & 0.1 & 38\% \\
+HAPPO, cloned & $91.63\;[88.62, 95.52]$ & 63.7\% & 49.2 & 85.2\% & 30.9\% & 0.2 & 42\% \\
+\midrule
+MAPPO, scratch & $34.32\;[31.38, 37.58]$ & 5.6\% & 22.8 & 70.7\% & 1.0\% & 0.2 & 91\% \\
+MAT, scratch & $32.23\;[25.75, 38.37]$ & 6.2\% & 22.2 & 71.4\% & 2.0\% & 0.2 & 87\% \\
+\midrule
+scripted reference & $100.17\;[96.89, 103.34]$ & 75.0\% & 52.3 & 89.9\% & 31.0\% & 0.2 & 34\% \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage4_curves.png}
+\caption{Stage 4 validation curves (mean and 95\% bootstrap band over 5 seeds); the dashed line is the scripted reference's test return. Left: from the cloned start, MAPPO and HAA2C pass the script within about 2.5M ticks, HATRPO and MAT reach it near the end, and HAPPO levels off around 93. Right: from scratch, MAPPO and MAT again follow nearly the same curve and reach about 40 on validation after 16M ticks.}
+\label{fig:results-stage4-curves}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage4_scores.png}
+\caption{Stage 4 test return and win rate per configuration (mean and 95\% bootstrap interval over 5 seeds). Dashed line: scripted reference; dotted line: \texttt{noop}.}
+\label{fig:results-stage4-scores}
+\end{figure}
+
+Two learners beat the script that taught them (Table~\ref{tab:results-stage4}, Figures~\ref{fig:results-stage4-curves} and~\ref{fig:results-stage4-scores}). MAPPO and HAA2C end with a higher return than the scripted reference, with non-overlapping intervals, win 88\% and 86\% of test episodes against 75\%, and finish with half of the Core's HP instead of a third. MAT and HATRPO end level with the script, and HAPPO below it.
+
+From scratch, Stage 4 gets further than Stage 3 in the same 16M ticks: MAPPO and MAT reach 32--34 and win their first episodes (about 6\%), against 20--23 and almost no wins on Stage 3. A plausible reason is that the Support's healing and the Vanguard's damage reduction keep a weak team alive longer, so it sees more of the later waves.
+
+The ranking runs against the usual expectation. HAPPO and HATRPO were designed for teams whose agents differ, and Stage 4 is the one stage where they do: a tank, a damage dealer and a healer with different speeds, health and abilities. Yet MAPPO, which trains one actor for all three, finishes first from the cloned start and first in the scratch pilot, and HAPPO finishes last among the cloned starts. Two properties of DotShot explain this, in our reading. Every observation contains the agent's class, so a shared network can condition its behaviour on the role; and sharing gives each parameter three times as much data. The monotonic-improvement guarantee of sequential updates did not translate into better policies at these budgets.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.78\textwidth]{../assets/figures/behaviour_stage4_roles_maps.png}
+\caption{Where each role spends its time on Stage 4 (16 test episodes, square-root colour scale): the scripted reference (top) and the MAPPO policy started from the cloned script (bottom, median seed). The script's Vanguard ranges far from the Core; MAPPO keeps all three roles within about 100 px of it, each favouring a different side.}
+\label{fig:behaviour-stage4-maps}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/behaviour_stage4_roles_stats.png}
+\caption{Per-role behaviour on Stage 4 (16 test episodes per policy, median seed of each cloned-start configuration). Left: mean distance to the Core. Right: uses of the Vanguard's Aegis and the Support's Pulse per episode.}
+\label{fig:behaviour-stage4-stats}
+\end{figure}
+
+\paragraph{How the squad plays.} Figures~\ref{fig:behaviour-stage4-maps} and~\ref{fig:behaviour-stage4-stats} break the behaviour down by role. The script sends its Vanguard out to meet enemies (152 px from the Core on average, with long excursions toward the edges) and keeps the Support closest. Every cloned-start policy pulls the squad inward, to 75--113 px for MAPPO, HAA2C and MAT, and MAPPO spreads its three agents around different sides of the Core. The scratch MAPPO policy does the opposite: its agents spend most of their time 280--340 px out and use their abilities about half as often. The cloned-start policies use their abilities slightly less often than the script (MAPPO: 11.6 Aegis and 12.9 Pulse per episode against 13.4 and 16.2), so ability use does not explain their lead; where the agents stand and how they move does. MAPPO and HAA2C, the two that beat the script, are also the two that move most (70--73\% of the time against 34--42\% for the other policies), without dying more often.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/behaviour_stage4_core_weapons.png}
+\caption{Stage 4. Left: Core HP over the episode (16 test episodes per policy). MAPPO and HAA2C, the two policies that beat the script, keep the Core above the script's curve from the middle of the episode on; the scratch MAPPO policy loses it by the end. Right: weapon chosen when an enemy of a given element is under the aim. On Stage 4, holding fire also triggers the class ability, which is why the scratch policy holds with a target in its sights 17--20\% of the time.}
+\label{fig:behaviour-stage4-core}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../assets/figures/final_stage4_components.png}
+\caption{Where the Stage 4 return comes from (mean test return per reward group). Combat terms dominate every policy, and the support group (Aegis absorption, healing, marking) is small throughout. Most of MAPPO's lead over the script, 6.2 of 7.7 points, is in the combat group.}
+\label{fig:results-stage4-components}
+\end{figure}
+
+Figures~\ref{fig:behaviour-stage4-core} and~\ref{fig:results-stage4-components} show where the lead over the script comes from. The Core HP curves of MAPPO and HAA2C separate from the script's halfway through the episode and end 17 points higher. In the reward decomposition, most of MAPPO's lead (6.2 of 7.7 points) is in combat: it kills 56.1 enemies per episode against 52.3, because a Core that stands longer keeps the waves coming. The win bonus grows from 0.62 to 0.98 and Core damage shrinks from $-5.96$ to $-5.13$, but other penalties grow, and the net penalty is slightly larger than the script's ($-9.3$ against $-8.6$). Shaping is the same for both (19.2 and 18.2), so the learned squad did not find a way to collect shaping that the script leaves behind.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/results/s4_mappo_teamwork.jpg}
+\includegraphics[width=0.49\textwidth]{../assets/screenshots/results/s4_mappo_stacking.jpg}
+\caption{Stage 4, MAPPO started from the cloned script (median seed), held-out test episodes. Left, a won episode at tick 2000: the Vanguard (blue) has its Aegis up and draws the enemies north of the Core; the Support (green) fires a Pulse that marks the Water enemy beside the Vanguard (yellow ring); the Striker (white) and the Support shoot it with Grass, and the kill counts as a combo. Right, a lost episode at tick 1100: the three agents stack south-east of the Core and chain three combo kills, while a Grass boss with its shield intact walks in from the north, unopposed. The Core falls at tick 1805.}
+\label{fig:shots-stage4}
+\end{figure}
+
+The screenshots in Figure~\ref{fig:shots-stage4} show the squad's main strength and its main weakness. The roles combine their abilities without any communication channel: the Vanguard draws fire, the Support marks a target, and the damage of the whole squad lands on that target. The same tendency to converge on one fight leaves the Core's other sides open, and in the lost episode a boss reaches the Core unchallenged while all three agents are busy elsewhere.
+
+\section{Discussion and Limitations}
+\label{sec:discussion}
+
+\paragraph{What the benchmark measures.} DotShot separates three skills that are easy to conflate in a single return. Aiming and moving are learned quickly: PPO solves Stage 1 in 4M ticks. Choosing the element is a credit-assignment problem that the fire-time credit, the crosshair observation and the Stage 1 policy make tractable, and by Stage 3 every learner, from scratch or not, chooses correctly for most targets. Defending a shared objective under partial observability is the hard part. From random weights, none of the learners we tried learned it within 16M ticks; a single 24M-tick run began to.
+
+\paragraph{The environment mattered more than the learner.} The largest gains in this project came from changes to the task. Removing the incentive to die, paying for aim only when the agent fires, giving the element credit a zero mean and letting agents decide every 8 ticks turned a benchmark on which every learner stayed at random level into one on which tuned learners beat a hand-written expert. Each of them followed a measurement, a reward breakdown, a behaviour probe or an A/B run, listed in Section~\ref{sec:dev}. Looking at behaviour was the most useful habit. The audit caught a frozen clone, a probe revealed the hold-fire incentive of the first element credit, and the suicide trap surfaced when a scripted policy that never fires beat every learner. A return curve alone would have shown all three as slow learning.
+
+\paragraph{Algorithms.} Three observations hold across both cooperative stages. First, demonstrations dominate: cloning a scripted expert and fine-tuning with RL reaches or exceeds the expert in 4M ticks on every learner, while training from scratch for four times as long stays far below. Second, parameter sharing helps more than the guarantees of sequential updates: MAPPO and MAT led both scratch pilots, and MAPPO led the heterogeneous stage, where HAPPO and HATRPO were expected to have the advantage. Third, the differences between learners are modest once the start is good. On Stage 3 all five cloned-start learners end within 6 points of each other; on Stage 4 the spread is larger (92 to 108) and the order is stable across seeds.
+
+\paragraph{Limitations.} This is a proof of concept on one workstation, and several choices bound what the results can claim.
+\begin{itemize}
+    \item \textbf{Budgets.} Cloned-start runs use the 4M-tick budget at which they were tuned; scratch runs stop at 16M ticks while their curves are still rising. The comparison between scratch learners therefore measures early learning speed; final performance may rank them differently.
+    \item \textbf{Selection.} Only the two learners that led each scratch pilot were scaled. The pilot used 2 seeds and validation episodes, and the other three learners may overtake them at larger budgets.
+    \item \textbf{Tuning.} Stage 4 studies were stopped at 16 trials instead of 24. Scratch hyperparameters were not tuned, because the search could not rank them at its budget; all scratch runs share one standard configuration. Stage 2 transfer trials were effectively single-seed because of a seeding bug that was fixed before the final runs.
+    \item \textbf{Statistics.} Five seeds give wide intervals on win rates; differences of a few points between learners are within noise, as the overlapping intervals show.
+    \item \textbf{The expert.} The demonstrations come from one scripted policy. The cloned-start results show how much RL adds on top of that policy, which says little about learning from weaker demonstrations or from none.
+    \item \textbf{MAT at execution time.} MAT decodes the agents' actions one after another from all observations, so it is not a decentralized policy; the HARL learners are.
+\end{itemize}
+
+\paragraph{Next steps.} The scratch curves call for longer runs (24M ticks and beyond) and for a curriculum that carries the Stage 2 policy into the cooperative stages, as Stage 1 carried into Stage 2. A study of demonstration quality, cloning from the weaker heuristics of Table~\ref{tab:baselines}, would show how much of the cloned-start advantage depends on the expert. Finally, the failure mode visible in the screenshots, the whole team converging on one fight while the Core is attacked from another side, suggests a reward or observation that makes undefended approaches to the Core visible to every agent.
+
+\bibliographystyle{plainnat}
+\bibliography{../references}
+
+\end{document}

@@ -1,0 +1,20 @@
+# Scratch run with standard hyperparameters (those of configs/ablations/stage3_harl_mappo.yaml,
+# which learned to defend the Core in a 24M-tick run). The search could not rank scratch
+# configurations at 4M ticks. total_steps is in decisions: 1M = 8M ticks (pilot).
+algo: mat
+stage: 3
+episode_length: 200
+n_rollout_threads: 32
+use_linear_lr_decay: true
+lr: 0.0005
+entropy_coef: 0.01
+clip_param: 0.2
+ppo_epoch: 5
+num_mini_batch: 4
+gamma: 0.99
+gae_lambda: 0.95
+total_steps: 1000000
+eval_freq: 50000
+n_eval_episodes: 16
+n_test_episodes: 32
+exp_name: s3_mat_scratch_std

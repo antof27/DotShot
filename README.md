@@ -1,160 +1,112 @@
-# DotShot RL
+# DotShot
 
-A 2D top-down cooperative shooter environment built with Gymnasium and Pygame for training reinforcement learning agents. The agents control their movement and aiming vectors (twin-stick layout) and must dynamically switch weapons to counter incoming enemies, optionally coordinating with an ally.
+DotShot is a 2D arena shooter for single- and multi-agent reinforcement learning, with a benchmark suite and a research handbook in the same repository. Agents move, aim in 32 directions and fire one of three elemental weapons (Water beats Fire, Grass beats Water, Fire beats Grass) at waves of enemies. Four stages add one difficulty at a time:
 
----
+| Stage | Interface | Agents | What it adds |
+| :---: | :--- | :--- | :--- |
+| 1 | Gymnasium | 1 Striker | aiming, leading targets, using cover |
+| 2 | Gymnasium | 1 Striker | three enemy elements, enemy fire, neutral allies to avoid |
+| 3 | PettingZoo | 2 Strikers | defending a central Core with limited vision, shielded bosses |
+| 4 | PettingZoo | Vanguard, Striker, Support | heterogeneous roles with abilities |
 
-## Element Matchups
-- **Water Gun** (blue projectile) counters **Fire Enemy** (red, fast)
-- **Fire Gun** (red projectile) counters **Grass Enemy** (green, slow)
-- **Grass Gun** (green projectile) counters **Water Enemy** (blue, medium)
+| Stage 3 | Stage 4 |
+| :---: | :---: |
+| ![Stage 3](docs/assets/screenshots/stage3_coop_boss_overlay.png) | ![Stage 4](docs/assets/screenshots/stage4_heterogeneous_squad.png) |
 
-*Note: Firing the incorrect weapon deals 0 damage and incurs a reward penalty.*
+Every agent acts in `MultiDiscrete([3, 3, 32, 4])` (horizontal move, vertical move, aim, weapon) once every 8 simulator ticks and observes a 166-value vector. Centralised critics also get a global state. The full specification, including every reward term, is in [docs/03-dotshot-simulator-spec.md](docs/03-dotshot-simulator-spec.md).
 
----
+## Results
 
-## Key Environment Mechanics
+Final policies, 5 seeds each, 32 held-out test episodes per seed. Return: mean over seeds [95% bootstrap CI]. "Cloned" runs start from an actor cloned from a scripted expert and train 4M ticks; "scratch" runs train from random weights.
 
-### 1. Interception Aiming (Target Leading)
-Enemies move continuously toward the agent. To aim accurately, the agent's observation space includes the **velocity vector ($v_x, v_y$)** of the 3 closest enemies. This allows the policy to learn to calculate interception angles and lead moving targets.
+| Stage | Policy | Return | Win rate |
+| :---: | :--- | :---: | :---: |
+| 1 | PPO, 4M ticks | 43.15 [39.85, 45.69] | 100.0% |
+| 2 | PPO from scratch, 4M ticks | 22.46 [21.35, 23.29] | 93.1% |
+| 2 | PPO from the Stage 1 policy, 4M ticks | 44.17 [42.46, 46.34] | 78.1% |
+| 3 | best cloned: HAA2C | 84.87 [82.48, 87.26] | 63.1% |
+| 3 | best scratch (16M ticks): MAPPO | 22.68 [16.91, 28.83] | 1.2% |
+| 3 | scripted expert (96 episodes) | 87.59 [83.97, 91.15] | 78.1% |
+| 4 | best cloned: MAPPO | **107.90** [106.69, 109.11] | **88.1%** |
+| 4 | best scratch (16M ticks): MAPPO | 34.32 [31.38, 37.58] | 5.6% |
+| 4 | scripted expert (96 episodes) | 100.17 [96.89, 103.34] | 75.0% |
 
-### 2. Bullet Discipline (In-Flight Capping)
-To prevent the agent from spamming bullets and wasting ammunition, the environment tracks active bullets. If a bullet is already in flight toward a target, subsequent trigger pulls at that same target are automatically suppressed (without consuming the weapon cooldown).
+- Stage 1 is solved, and transfer from Stage 1 doubles the Stage 2 return.
+- Cloning the expert and fine-tuning with RL reaches the expert on Stage 3 and beats it on Stage 4.
+- From scratch, the learners that share parameters across agents (MAPPO, MAT) learn fastest, but 16M ticks are not enough to defend the Core reliably.
+- On the heterogeneous Stage 4, the shared-actor MAPPO beats HAPPO and HATRPO, the methods designed for heterogeneous teams.
 
-### 3. Dynamic Potential-Based Reward Shaping (DPBRS)
-To boost exploration without distorting the true reward landscape, the environment wraps training with a dynamic potential-based curiosity module. It automatically tracks the historical best and worst rolling average rewards (`running_min_rew`, `running_max_rew`) to dynamically fade out exploration rewards as the agent masters the task.
+Replays of won held-out test episodes: [Stage 3, MAT](docs/assets/videos/stage3_mat.mp4) and [Stage 4, MAPPO](docs/assets/videos/stage4_mappo.mp4).
 
-### 4. Observation Space
-Each agent receives a **70-dimensional** observation space:
-- **Agent state (9 features)**: Position, velocity, health, cooldown, and last fired weapon.
-- **3 Closest Hostile Enemies (39 features)**: Relative position, angle, distance, health, type (one-hot), correct weapon hint, and **velocity ($v_x, v_y$)**.
-- **2 Closest Allies (22 features)**: Relative position, angle, distance, health, and active/inactive status.
+Every learner, tables, learning curves, behaviour analysis and screenshots: [experiment log](docs/04-experiments-log.md) and [report](docs/paper/dotshot_marl_report.pdf).
 
----
+## Learners
 
-## Getting Started
+| Stages | Learner | Implementation |
+| :---: | :--- | :--- |
+| 1–2 | PPO | Stable-Baselines3 |
+| 3–4 | MAPPO, HAPPO, HATRPO, HAA2C | [PKU-MARL/HARL](https://github.com/PKU-MARL/HARL), pinned submodule |
+| 3–4 | MAT | [PKU-MARL/Multi-Agent-Transformer](https://github.com/PKU-MARL/Multi-Agent-Transformer), pinned submodule |
 
-### 1. Installation
-Activate the virtual environment:
-```bash
-source .venv/bin/activate
-```
-Verify the environment registration and dimensions:
-```bash
-python3 test_env.py
-```
+The upstream code is never edited. Adapters and corrections live in `src/benchmarks/official/`, and each correction is covered by a test. Every learner and every scripted baseline is scored by the same evaluator on held-out episode seeds.
 
-### 2. Manual Play (Play it Yourself)
-To test the game mechanics, element switching, and control layout yourself:
-```bash
-python3 enjoy.py --manual
-```
-**Controls**:
-- **Movement**: `W`, `A`, `S`, `D` / Arrow keys
-- **Aiming**: Mouse cursor
-- **Weapons**: `1` (Water), `2` (Grass), `3` (Fire)
-- **Shoot**: Left Click / `Space`
+## Repository Layout
 
----
-
-## Standard Single-Agent Training & Tuning (Stable Baselines 3)
-
-### 1. Hyperparameter Tuning (`tune.py`)
-Search for optimal PPO hyperparameters using Optuna (BOHB with Hyperband pruning):
-```bash
-python3 tune.py [options]
-```
-#### Options:
-- `--trials <int>`: Total trials to run (default: `50`)
-- `--steps-per-trial <int>`: Max steps per trial (default: `300000`)
-- `--num-envs <int>`: Number of parallel environments per trial (default: `8`)
-- `--vec-env {dummy,subproc}`: Use `subproc` to parallelize environment stepping across CPU cores (default: `dummy`)
-- `--n-jobs <int>`: Number of parallel Optuna trials to run simultaneously (default: `1`)
-- `--storage <str>`: SQLite database storage URL to coordinate distributed trials (default: `sqlite:///optuna_study.db`)
-- `--curiosity`: Enable the Intrinsic Curiosity Module (ICM)
-- `--device {cpu,cuda,auto}`: Device to run PyTorch calculations on (default: `cpu`)
-
-*Tip: Because tuning coordinates through a SQLite database, you can run multiple independent `python3 tune.py` instances in parallel (e.g. on different GPUs or shell terminals), and they will coordinate and share the search space.*
-
----
-
-### 2. Agent Training (`train.py`)
-Train the agent using PPO and GAE:
-```bash
-python3 train.py [options]
-```
-#### Options:
-- `--steps <int>`: Total training timesteps (default: `1000000`)
-- `--num-envs <int>`: Number of parallel environments (default: `8`)
-- `--vec-env {dummy,subproc}`: Use `subproc` to run environments in parallel child processes for a **4x to 8x speedup**.
-- `--torch-threads <int>`: Set PyTorch CPU thread limit to prevent core thrashing (default: `1`)
-- `--device {cpu,cuda,auto}`: Device to run PyTorch models on (default: `cpu`)
-- `--curiosity`: Train with Intrinsic Curiosity Module (ICM) exploration rewards
-- `--env-id <str>`: Gymnasium level: `DotShot-Level1-v0` (easy), `DotShot-Level2-v0` (medium), `DotShot-Level3-v0` (full 2-agent co-op)
-- `--resume <path>`: Resume training from a saved checkpoint ZIP
-
----
-
-### 3. Checkpoint Weight Surgery (`surgery.py`)
-Convert a trained Level 2 single-agent model (`.zip`) into an initialized Level 3 multi-agent model (`.zip`) so you don't have to train Level 3 from scratch:
-```bash
-python3 surgery.py --source ./models/ppo_element_shooter_final.zip --target ./models/ppo_level3_init.zip
+```text
+src/dotshot/        simulator: engine, rewards, Gymnasium and PettingZoo envs, Pygame renderer
+src/benchmarks/     learners, scripted baselines, behaviour cloning, Optuna tuning, evaluation
+configs/            official/ (tuned final configs), baselines/, ablations/
+scripts/            run_jobs.py, monitor_runs.py, report_final.py, enjoy.py, ...
+tests/              simulator, adapter and regression tests
+docs/               handbook chapters, LaTeX report, curated results, screenshots
+third_party/        HARL and Multi-Agent-Transformer (git submodules)
 ```
 
----
+## Setup (Windows, Python 3.11)
 
-## Multi-Agent Reinforcement Learning (MARL) Framework
-
-For advanced, sequence-modeling cooperative play, the repository includes a custom PyTorch MARL framework implementing **Multi-Agent Transformers** under the `marl/` directory.
-
-### 1. Supported Algorithms
-*   **MAT (Multi-Agent Transformer)**: Autoregressively sequences action choices between cooperating agents using a fixed decision order (`[0, 1]`).
-*   **PMAT (Prioritized Multi-Agent Transformer)**: Dynamically decides the optimal decision order step-by-step using a Plackett-Luce sampling mechanism.
-*   **RoMAT (Role-based Multi-Agent Transformer)**: Concatenates a learnable role embedding (`Initiator`, `Support`) to each agent's observations, allowing role specialization.
-
-### 2. Train MARL Algorithms (`marl/train_marl.py`)
-Train a custom Transformer-based policy using PPO:
-```bash
-python3 marl/train_marl.py [options]
-```
-#### Options:
-- `--algo {mat,pmat,romat}`: Select the MARL algorithm to train (default: `pmat`)
-- `--env-id <str>`: Gymnasium environment level (default: `DotShot-Level3-v0`)
-- `--steps <int>`: Total training steps (default: `1000000`)
-- `--num-envs <int>`: Number of parallel environments (default: `8`)
-- `--vec-env {dummy,subproc}`: Vectorized environment type (default: `subproc`)
-- `--resume <path>`: Path to a custom MARL checkpoint (`.pt`) to resume training
-- `--device {cpu,cuda,auto}`: Device to train models on (default: `cpu`)
-
----
-
-### 3. MARL Checkpoint Surgery (`marl/surgery_marl.py`)
-Bootstrap Level 3 MARL training using a pre-trained Level 2 MARL checkpoint by performing weight surgery on the Centralized Critic input layer:
-```bash
-python3 marl/surgery_marl.py --source ./models_marl/pmat_final.pt --target ./models_marl/pmat_level3_init.pt
+```powershell
+git clone --recursive https://github.com/antof27/DotShot.git
+cd DotShot
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
 ```
 
----
+PyTorch with CUDA is only needed for MAT; the simulator, SB3 and HARL run faster on the CPU.
 
-## Evaluation & Visualization (`enjoy.py`)
+## Usage
 
-Watch any trained model (Stable Baselines 3 or custom PyTorch MARL) play the game:
-```bash
-python3 enjoy.py --env-id DotShot-Level3-v0 --model <path_to_checkpoint>
+```powershell
+# Tests
+.\.venv\Scripts\python.exe -m pytest
+
+# Play a stage yourself (WASD, mouse aim, 1/2/3 elements, click or Space to fire, Tab for the overlay)
+.\.venv\Scripts\python.exe scripts\enjoy.py --stage 3 --manual
+
+# Scripted baselines (96 test episodes per policy)
+.\.venv\Scripts\python.exe -m benchmarks.runners.run_marl_baselines --config configs\baselines\stage3_baselines.yaml
+
+# Train a tuned configuration on 5 seeds (resumable)
+.\.venv\Scripts\python.exe scripts\run_jobs.py --config configs\official\s3_harl_mappo_bc.yaml --seeds 0-4 --out runs\final\stage3 --workers 5
+
+# Replay a trained run on a held-out test episode, or record it
+.\.venv\Scripts\python.exe scripts\enjoy.py --run runsinal\stage4\s4_harl_mappo_bc\seed_0
+.\.venv\Scripts\python.exe scripts\enjoy.py --run runsinal\stage4\s4_harl_mappo_bc\seed_0 --record stage4.mp4
+
+# Watch training curves and behaviour flags
+.\.venv\Scripts\python.exe scripts\monitor_runs.py runs\final\stage3
+
+# Tables and learning curves
+.\.venv\Scripts\python.exe scripts\report_final.py --stage 3 --runs runs\final\stage3 --baselines runs\baselines\stage3 --out docs\results\final_stage3.json --figure docs\assets\figures\final_stage3_curves.png
+
+# Hyperparameter search for one stage and learner
+.\.venv\Scripts\python.exe -m benchmarks.official.bohb_tune --study s3_harl_mappo --device cpu
 ```
-*Note: If the model path ends with `.zip`, it will automatically load via Stable Baselines 3. If it ends with `.pt`, it will load via our custom PyTorch MARL policy runner, ensuring seamless compatibility.*
 
----
+Run commands from the repository root with `PYTHONPATH=src` if the package is not installed.
 
-## Recording Gameplay Videos (`record_video.py`)
-Record high-resolution agent gameplay videos directly to MP4:
-```bash
-python3 record_video.py [options]
-```
-#### Options:
-- `--model <path>`: Path to the trained model (default: `./models/ppo_element_shooter_final`)
-- `--env-id <str>`: Gym env ID (default: `DotShot-Level1-v0`)
-- `--output <path>`: Output video filename (default: `agent_gameplay.mp4`)
-- `--steps <int>`: Maximum steps to record (default: `3600`)
-- `--fps <int>`: Video frame rate (default: `60`)
-- `--device {cpu,cuda,auto}`: PyTorch device to run model on (default: `cpu`)
+## Documentation
+
+- [Handbook](docs/README.md): from single-agent RL to cooperative MARL, the simulator specification and the experiment log. Serve it locally with `python -m http.server 8080 --directory docs`.
+- [Report](docs/paper/dotshot_marl_report.pdf) ([LaTeX source](docs/paper/dotshot_marl_report.tex)).
+- [Architecture](.agents/docs/ARCHITECTURE.md), [design decisions](.agents/docs/DECISIONS.md), [roadmap](.agents/docs/ROADMAP.md).

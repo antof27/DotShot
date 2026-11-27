@@ -1,0 +1,127 @@
+{
+  "runs": "runs/phase1/stage3_harl_mappo_gate2",
+  "n_seeds": 5,
+  "learner": {
+    "return_mean": {
+      "n": 5,
+      "mean": -1.6418301064705036,
+      "std": 0.4242913575762399,
+      "median": -1.7721760148836139,
+      "iqm": -1.6736570497482353,
+      "mean_ci_low": -1.976815705314198,
+      "mean_ci_high": -1.226228699576264,
+      "ci_low": -2.0756564018063632,
+      "ci_high": -1.1170927671881048,
+      "ci_of": "iqm"
+    },
+    "kills_mean": {
+      "n": 5,
+      "mean": 1.8375,
+      "std": 0.31337377841804187,
+      "median": 1.9375,
+      "iqm": 1.96875,
+      "mean_ci_low": 1.525,
+      "mean_ci_high": 2.025,
+      "ci_low": 1.4583333333333333,
+      "ci_high": 2.0416666666666665,
+      "ci_of": "iqm"
+    },
+    "episode_length": {
+      "n": 5,
+      "mean": 570.9,
+      "std": 20.990915073550273,
+      "median": 573.6875,
+      "iqm": 571.875,
+      "mean_ci_low": 552.95625,
+      "mean_ci_high": 588.05453125,
+      "ci_low": 545.8541666666666,
+      "ci_high": 592.25,
+      "ci_of": "iqm"
+    },
+    "win_rate": {
+      "n": 5,
+      "mean": 0.0,
+      "std": 0.0,
+      "median": 0.0,
+      "iqm": 0.0,
+      "mean_ci_low": 0.0,
+      "mean_ci_high": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "ci_of": "iqm"
+    },
+    "core_hp_ratio": {
+      "n": 5,
+      "mean": 0.0,
+      "std": 0.0,
+      "median": 0.0,
+      "iqm": 0.0,
+      "mean_ci_low": 0.0,
+      "mean_ci_high": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "ci_of": "iqm"
+    }
+  },
+  "baselines": {
+    "noop": {
+      "return": {
+        "n": 32,
+        "mean": -7.194126640436139,
+        "std": 0.6508270472613212,
+        "median": -7.435886039057415,
+        "iqm": -7.329516118109565,
+        "mean_ci_low": -7.4226464378335475,
+        "mean_ci_high": -6.963087991224609,
+        "ci_low": -7.481006552087706,
+        "ci_high": -7.069938097454178,
+        "ci_of": "iqm"
+      },
+      "episode_length": {
+        "n": 32,
+        "mean": 483.03125,
+        "std": 44.65806504358983,
+        "median": 470.0,
+        "iqm": 471.375,
+        "mean_ci_low": 468.15234375,
+        "mean_ci_high": 499.12578125,
+        "ci_low": 457.8109375,
+        "ci_high": 491.0,
+        "ci_of": "iqm"
+      }
+    },
+    "charge": {
+      "return": {
+        "n": 32,
+        "mean": -10.321502576981139,
+        "std": 1.1196136993136923,
+        "median": -10.53805921954191,
+        "iqm": -10.490729454157673,
+        "mean_ci_low": -10.703603475947917,
+        "mean_ci_high": -9.915797355319402,
+        "ci_low": -10.921493171301732,
+        "ci_high": -9.997160414152356,
+        "ci_of": "iqm"
+      },
+      "episode_length": {
+        "n": 32,
+        "mean": 474.3125,
+        "std": 50.937730060830155,
+        "median": 473.0,
+        "iqm": 472.5,
+        "mean_ci_low": 457.375,
+        "mean_ci_high": 492.18984374999997,
+        "ci_low": 453.6203125,
+        "ci_high": 488.37812499999995,
+        "ci_of": "iqm"
+      }
+    }
+  },
+  "checks": {
+    "beats_noop": true,
+    "beats_charge": true,
+    "kills>=min": false,
+    "longer_than_charge": true
+  },
+  "passed": false
+}

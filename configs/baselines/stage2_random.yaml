@@ -1,0 +1,7 @@
+# Scripted Stage 2 baseline: random policy, 96 held-out test episodes at action_repeat 8.
+stage: 2
+algo: random
+total_steps: 0
+n_test_episodes: 96
+final_eval_split: test
+exp_name: stage2_random

@@ -1,0 +1,120 @@
+{
+  "stage": 1,
+  "learners": {
+    "s1_sb3_ppo_scratch": {
+      "return_mean": {
+        "n": 5,
+        "mean": 43.14645491869485,
+        "std": 3.405856685576792,
+        "median": 43.76078828026782,
+        "iqm": 43.89780722628566,
+        "mean_ci_low": 39.84797543732124,
+        "mean_ci_high": 45.694864902042475,
+        "ci_low": 38.813376065617526,
+        "ci_high": 46.52340367699038,
+        "ci_of": "iqm"
+      },
+      "win_rate": {
+        "n": 5,
+        "mean": 1.0,
+        "std": 0.0,
+        "median": 1.0,
+        "iqm": 1.0,
+        "mean_ci_low": 1.0,
+        "mean_ci_high": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "ci_of": "iqm"
+      },
+      "kills_mean": {
+        "n": 5,
+        "mean": 20.45,
+        "std": 1.8497888393003132,
+        "median": 20.78125,
+        "iqm": 20.895833333333332,
+        "mean_ci_low": 18.60625,
+        "mean_ci_high": 21.825,
+        "ci_low": 18.104166666666668,
+        "ci_high": 22.239583333333332,
+        "ci_of": "iqm"
+      },
+      "elemental_accuracy": {
+        "n": 5,
+        "mean": 1.0,
+        "std": 0.0,
+        "median": 1.0,
+        "iqm": 1.0,
+        "mean_ci_low": 1.0,
+        "mean_ci_high": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "ci_of": "iqm"
+      },
+      "core_hp_ratio": {
+        "n": 0
+      },
+      "episode_length": {
+        "n": 5,
+        "mean": 1500.0,
+        "std": 0.0,
+        "median": 1500.0,
+        "iqm": 1500.0,
+        "mean_ci_low": 1500.0,
+        "mean_ci_high": 1500.0,
+        "ci_low": 1500.0,
+        "ci_high": 1500.0,
+        "ci_of": "iqm"
+      },
+      "hold_frac": {
+        "n": 5,
+        "mean": 0.0885,
+        "std": 0.02981754703377042,
+        "median": 0.09541666666666666,
+        "iqm": 0.09349999999999999,
+        "mean_ci_low": 0.06255,
+        "mean_ci_high": 0.11316666666666667,
+        "ci_low": 0.05647222222222222,
+        "ci_high": 0.11877777777777777,
+        "ci_of": "iqm"
+      },
+      "move_frac": {
+        "n": 5,
+        "mean": 0.9541166666666667,
+        "std": 0.04513977058967943,
+        "median": 0.966,
+        "iqm": 0.96975,
+        "mean_ci_low": 0.9063000000000001,
+        "mean_ci_high": 0.9830166666666666,
+        "ci_low": 0.8991944444444444,
+        "ci_high": 0.9852222222222222,
+        "ci_of": "iqm"
+      },
+      "shots_per_100": {
+        "n": 5,
+        "mean": 8.212083333333336,
+        "std": 0.12699382093454625,
+        "median": 8.279166666666667,
+        "iqm": 8.265277777777778,
+        "mean_ci_low": 8.080833333333334,
+        "mean_ci_high": 8.290833333333335,
+        "ci_low": 8.052083333333334,
+        "ci_high": 8.296527777777778,
+        "ci_of": "iqm"
+      },
+      "deaths": {
+        "n": 5,
+        "mean": 0.0,
+        "std": 0.0,
+        "median": 0.0,
+        "iqm": 0.0,
+        "mean_ci_low": 0.0,
+        "mean_ci_high": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "ci_of": "iqm"
+      }
+    }
+  },
+  "baselines": {},
+  "markdown": "| Policy | n | Return mean [95% CI] | Median | IQM | Win (%) | Kills | Elem. (%) | Core HP (%) | Length | Hold | Move | Deaths |\n| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n| s1_sb3_ppo_scratch | 5 seeds | 43.15 [39.85, 45.69] | 43.76 | 43.90 | 100.0 | 20.4 | 100.0 | \u2013 | 1500 | 0.09 | 0.95 | 0.0 |"
+}

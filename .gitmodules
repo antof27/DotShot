@@ -1,0 +1,6 @@
+[submodule "third_party/HARL"]
+	path = third_party/HARL
+	url = https://github.com/PKU-MARL/HARL.git
+[submodule "third_party/Multi-Agent-Transformer"]
+	path = third_party/Multi-Agent-Transformer
+	url = https://github.com/PKU-MARL/Multi-Agent-Transformer.git

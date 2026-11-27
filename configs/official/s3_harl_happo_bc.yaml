@@ -1,0 +1,27 @@
+# Exported by benchmarks.official.bohb_tune from study s3_harl_happo, trial 0 (mean final val return 83.711).
+# Final runs: 500k decisions = 4M ticks, the budget the search tuned for.
+algo: harl_happo
+episode_length: 200
+n_rollout_threads: 32
+use_linear_lr_decay: true
+stage: 3
+total_steps: 500000
+eval_freq: 25000
+n_eval_episodes: 16
+n_test_episodes: 32
+critic_lr: 0.00023688639503640813
+critic_epoch: 10
+critic_num_mini_batch: 1
+entropy_coef: 0.0012184186502221762
+gamma: 0.98
+gae_lambda: 0.95
+lr: 9.445600138094707e-05
+actor_num_mini_batch: 8
+ppo_epoch: 6
+clip_param: 0.2
+hidden_sizes:
+- 256
+- 256
+warm_start: bc
+critic_warmup_updates: 10
+exp_name: s3_harl_happo_bc
