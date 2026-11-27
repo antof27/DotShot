@@ -1,12 +1,16 @@
-"""Optuna BOHB tuning (multivariate TPE + Hyperband) for the DotShot official suite.
+"""Optuna BOHB tuning (multivariate TPE + Hyperband), one study per (stage, learner).
 
-Each study trains real runs from the resolved stage YAML plus the sampled
-hyperparameters, reports every evaluation to Optuna so Hyperband can stop weak
-trials early, and finally exports the winning hyperparameters to
-``configs/official/`` and ``docs/results/m3_bohb_summary.json``.
+Protocol (Phase 3 of the M3 performance fix):
+* Every completed trial trains two seeds with identical hyperparameters and
+  returns the mean of their final-policy returns on 32 ``val`` episodes. The
+  final policy is scored, never the best checkpoint, and step 0 is never reported.
+* Hyperband prunes on seed A's periodic ``val`` evaluations; seed B only runs
+  for trials that reach ``max_resource``.
+* Environment settings (``max_steps`` included) are the stage defaults, exactly
+  as in the final runs; only learner hyperparameters are searched.
 
 Usage:
-    python -m benchmarks.official.bohb_tune --study all --trials 16 --device cuda
+    python -m benchmarks.official.bohb_tune --study s3_harl_mappo --trials 24
     python -m benchmarks.official.bohb_tune --export-only
 """
 
@@ -15,10 +19,9 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 
 import optuna
-import optuna.trial
 import yaml
 
 _SRC = Path(__file__).resolve().parents[2]
@@ -26,505 +29,357 @@ _REPO = _SRC.parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-SEED = 42
-STUDIES = ("sb3_ppo_stage1", "sb3_ppo_stage2", "harl_mappo_stage3", "official_mat_stage3")
+SAMPLER_SEED = 42
+TRIAL_SEEDS = (100, 101)
 HARL_ALGOS = ("mappo", "happo", "hatrpo", "haa2c")
-TRIAL_ROOT = _REPO / "runs" / "bohb"
-CONFIG_DIR = _REPO / "configs" / "official"
-SUMMARY_PATH = _REPO / "docs" / "results" / "m3_bohb_summary.json"
-
-SB3_KEYS = ("lr", "n_steps", "batch_size", "n_epochs", "ent_coef", "clip_range", "gamma", "gae_lambda")
-HARL_KEYS = (
-    "lr",
-    "critic_lr",
-    "ppo_epoch",
-    "clip_param",
-    "entropy_coef",
-    "gamma",
-    "gae_lambda",
-    "use_recurrent_policy",
+STUDIES = (
+    "s1_sb3_ppo",
+    "s2_sb3_ppo",
+    *[f"s{s}_harl_{a}" for s in (3, 4) for a in HARL_ALGOS],
+    "s3_mat",
+    "s4_mat",
 )
-MAT_KEYS = ("lr", "ppo_epoch", "clip_param", "entropy_coef", "n_block", "n_embd", "n_head", "gamma")
+OPTUNA_DIR = _REPO / "runs" / "optuna"
+CONFIG_DIR = _REPO / "configs" / "official"
+SUMMARY_PATH = _REPO / "docs" / "results" / "optuna_summary.json"
+
+# Fixed (not searched) settings shared by tuning and final runs.
+SB3_FIXED = {"algo": "ppo", "num_envs": 8, "vec_env": "dummy", "cosine_lr": True, "vf_coef": 0.5, "max_grad_norm": 0.5}
+MARL_FIXED = {"episode_length": 200, "n_rollout_threads": 32, "use_linear_lr_decay": True}
 
 
-# --------------------------------------------------------------------------- helpers
+def _parse(study: str) -> tuple:
+    stage, learner = study.split("_", 1)
+    return int(stage[1:]), learner
 
 
-def _rel(path: str | Path) -> str:
-    """Repo-relative POSIX path when possible, so summaries stay machine-portable."""
-    try:
-        return Path(path).resolve().relative_to(_REPO).as_posix()
-    except ValueError:
-        return Path(path).as_posix()
+# ----------------------------------------------------------------------- search spaces
 
 
-def _base_config(stage: int, algo: str) -> Dict[str, Any]:
-    with open(_REPO / "configs" / f"stage{stage}_{algo}.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+def sb3_space(trial: optuna.Trial, stage: int) -> Dict[str, Any]:
+    params = {
+        "lr": trial.suggest_float("lr", 1e-4, 1e-3, log=True),
+        "n_steps": trial.suggest_categorical("n_steps", [256, 512, 1024]),
+        "batch_size": trial.suggest_categorical("batch_size", [128, 256, 512]),
+        "n_epochs": trial.suggest_int("n_epochs", 3, 10),
+        "ent_coef": trial.suggest_float("ent_coef", 1e-3, 3e-2, log=True),
+        "clip_range": trial.suggest_categorical("clip_range", [0.1, 0.2, 0.3]),
+        "gamma": trial.suggest_categorical("gamma", [0.98, 0.99, 0.995]),
+        "gae_lambda": trial.suggest_categorical("gae_lambda", [0.9, 0.95, 0.98]),
+    }
+    if stage == 2 and trial.suggest_categorical("warm_start", [False, True]):
+        params["warm_start"] = True
+    else:
+        size = trial.suggest_categorical("net_arch_size", [128, 256])
+        params["net_arch"] = [size, size]
+    return params
 
 
-def _trial_dir(study_name: str, number: int) -> Path:
-    return TRIAL_ROOT / study_name / f"trial_{number}"
+def harl_space(trial: optuna.Trial, algo: str) -> Dict[str, Any]:
+    params: Dict[str, Any] = {
+        "critic_lr": trial.suggest_float("critic_lr", 1e-4, 1e-3, log=True),
+        "critic_epoch": trial.suggest_int("critic_epoch", 3, 10),
+        "critic_num_mini_batch": trial.suggest_categorical("critic_num_mini_batch", [1, 2, 4, 8]),
+        "entropy_coef": trial.suggest_float("entropy_coef", 1e-3, 3e-2, log=True),
+        "gamma": trial.suggest_categorical("gamma", [0.98, 0.99, 0.995]),
+        "gae_lambda": trial.suggest_categorical("gae_lambda", [0.9, 0.95, 0.98]),
+    }
+    if algo == "hatrpo":
+        params["kl_threshold"] = trial.suggest_float("kl_threshold", 2e-3, 5e-2, log=True)
+    else:
+        params["lr"] = trial.suggest_float("lr", 5e-5, 1e-3, log=True)
+        params["actor_num_mini_batch"] = trial.suggest_categorical("actor_num_mini_batch", [1, 2, 4, 8])
+        if algo == "haa2c":
+            params["a2c_epoch"] = trial.suggest_int("a2c_epoch", 1, 5)
+        else:
+            params["ppo_epoch"] = trial.suggest_int("ppo_epoch", 3, 10)
+            params["clip_param"] = trial.suggest_categorical("clip_param", [0.1, 0.2, 0.3])
+    hidden = trial.suggest_categorical("hidden_size", [128, 256])
+    params["hidden_sizes"] = [hidden, hidden]
+    if trial.suggest_categorical("warm_start", ["scratch", "bc"]) == "bc":
+        params.update(warm_start="bc", critic_warmup_updates=10)  # BC clones into an MLP actor
+    elif trial.suggest_categorical("use_recurrent_policy", [False, True]):
+        params.update(use_recurrent_policy=True,
+                      data_chunk_length=trial.suggest_categorical("data_chunk_length", [10, 20]))
+    return params
 
 
-def _finish(trial: optuna.Trial, study_name: str, result: Dict[str, Any]) -> float:
-    value = float(result["best_return"])
-    trial.set_user_attr("run_dir", _rel(result["run_dir"]))
-    print(f"[{study_name}] trial {trial.number}: value={value:.3f} | {_rel(result['run_dir'])}")
-    return value
+def mat_space(trial: optuna.Trial) -> Dict[str, Any]:
+    params = {
+        "lr": trial.suggest_float("lr", 5e-5, 1e-3, log=True),
+        "entropy_coef": trial.suggest_float("entropy_coef", 1e-3, 3e-2, log=True),
+        "clip_param": trial.suggest_categorical("clip_param", [0.1, 0.2, 0.3]),
+        "ppo_epoch": trial.suggest_int("ppo_epoch", 3, 10),
+        "num_mini_batch": trial.suggest_categorical("num_mini_batch", [1, 2, 4, 8]),
+        "gamma": trial.suggest_categorical("gamma", [0.98, 0.99, 0.995]),
+        "gae_lambda": trial.suggest_categorical("gae_lambda", [0.9, 0.95, 0.98]),
+        "n_block": trial.suggest_int("n_block", 1, 3),
+        "n_embd": trial.suggest_categorical("n_embd", [64, 128]),
+        "n_head": trial.suggest_categorical("n_head", [1, 2, 4]),
+    }
+    if trial.suggest_categorical("warm_start", ["scratch", "bc"]) == "bc":
+        params["warm_start"] = "bc"
+    return params
 
 
-def _storage(db: str | Path) -> str:
-    return f"sqlite:///{Path(db).resolve().as_posix()}"
+def trial_config(study: str, trial: optuna.Trial, args: argparse.Namespace) -> Dict[str, Any]:
+    stage, learner = _parse(study)
+    common = {
+        "stage": stage,
+        "total_steps": args.max_resource,
+        "eval_freq": args.eval_freq,
+        "n_eval_episodes": args.n_eval,
+        "n_test_episodes": args.n_final,
+        "final_eval_split": "val",
+    }
+    if learner == "sb3_ppo":
+        cfg = {**SB3_FIXED, **common, **sb3_space(trial, stage)}
+        if cfg.pop("warm_start", False):
+            ckpt, arch = stage1_reference(args.db_dir)
+            if ckpt is None:
+                raise optuna.TrialPruned("no Stage 1 checkpoint for warm start")
+            # Final runs re-resolve init_model_path from the final Stage 1 runs.
+            cfg.update(init_model_path=ckpt, net_arch=arch, reset_weapon_head=True, warm_start=True)
+        return cfg
+    if learner == "mat":
+        return {"algo": "mat", **MARL_FIXED, **common, **mat_space(trial)}
+    algo = learner[len("harl_"):]
+    return {"algo": learner, **MARL_FIXED, **common, **harl_space(trial, algo)}
 
 
-def _open_study(study_name: str, args: argparse.Namespace) -> optuna.Study:
-    Path(args.db).resolve().parent.mkdir(parents=True, exist_ok=True)
+# ------------------------------------------------------------------------- objectives
+
+
+def _train(cfg: Dict[str, Any], seed: int, device: str, run_dir: Path, trial: Optional[optuna.Trial]) -> Dict[str, Any]:
+    algo = str(cfg["algo"])
+    if algo.startswith("harl_"):
+        from benchmarks.official.harl_runner import run_harl_experiment
+
+        return run_harl_experiment(cfg, seed, device, str(run_dir), trial)
+    if algo == "mat":
+        from benchmarks.official.mat_runner import run_mat_experiment
+
+        return run_mat_experiment(cfg, seed, device, str(run_dir), trial)
+    from benchmarks.runners.run_single_agent import run_experiment
+
+    return run_experiment(cfg, seed, device, run_dir_override=str(run_dir), optuna_trial=trial)
+
+
+def make_objective(study: str, args: argparse.Namespace) -> Callable[[optuna.Trial], float]:
+    def objective(trial: optuna.Trial) -> float:
+        cfg = trial_config(study, trial, args)
+        trial.set_user_attr("config", cfg)
+        root = Path(args.db_dir) / study / f"trial_{trial.number}"
+        finals = []
+        for k, seed in enumerate(TRIAL_SEEDS):
+            result = _train(cfg, seed, args.device, root / f"seed_{seed}", trial if k == 0 else None)
+            finals.append(result["final_return"])
+            trial.set_user_attr(f"final_val_return_seed{seed}", result["final_return"])
+        value = float(sum(finals) / len(finals))
+        print(f"[{study}] trial {trial.number}: {value:.3f} (seeds {finals})", flush=True)
+        return value
+
+    return objective
+
+
+# ----------------------------------------------------------------------------- studies
+
+
+def _journal(db_dir: Path, study: str) -> Path:
+    return Path(db_dir) / f"{study}.journal"
+
+
+def _storage(db_dir: Path, study: str) -> optuna.storages.JournalStorage:
+    # Optuna's append-only journal file instead of SQLite: on this workstation Windows
+    # application control blocks SQLAlchemy's compiled extensions, which RDBStorage needs.
+    # The journal is multi-process safe, so several workers can share one study.
+    from optuna.storages.journal import JournalFileBackend, JournalFileOpenLock
+
+    path = _journal(db_dir, study)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return optuna.storages.JournalStorage(JournalFileBackend(str(path), lock_obj=JournalFileOpenLock(str(path))))
+
+
+def open_study(study: str, args: argparse.Namespace) -> optuna.Study:
     return optuna.create_study(
-        study_name=study_name,
-        storage=_storage(args.db),
-        sampler=optuna.samplers.TPESampler(multivariate=True, seed=SEED),
+        study_name=study,
+        storage=_storage(args.db_dir, study),
+        sampler=optuna.samplers.TPESampler(multivariate=True, seed=SAMPLER_SEED),
         pruner=optuna.pruners.HyperbandPruner(
-            min_resource=args.min_resource,
-            max_resource=args.max_resource,
-            reduction_factor=3,
+            min_resource=args.min_resource, max_resource=args.max_resource, reduction_factor=3
         ),
         direction="maximize",
         load_if_exists=True,
     )
 
 
-def _load_study(study_name: str, db: str | Path) -> Optional[optuna.Study]:
+def load_study(study: str, db_dir: Path) -> Optional[optuna.Study]:
+    if not _journal(db_dir, study).exists():
+        return None
     try:
-        return optuna.load_study(study_name=study_name, storage=_storage(db))
+        return optuna.load_study(study_name=study, storage=_storage(db_dir, study))
     except KeyError:
         return None
 
 
-# ----------------------------------------------------------------------- search spaces
-
-
-def _sb3_space(trial: optuna.Trial) -> Dict[str, Any]:
-    return {
-        "lr": trial.suggest_float("lr", 1e-4, 1e-3, log=True),
-        "n_steps": trial.suggest_categorical("n_steps", [256, 512, 1024]),
-        "batch_size": trial.suggest_categorical("batch_size", [128, 256, 512]),
-        "n_epochs": trial.suggest_categorical("n_epochs", [4, 6, 8, 10]),
-        "ent_coef": trial.suggest_float("ent_coef", 0.002, 0.03, log=True),
-        "clip_range": trial.suggest_categorical("clip_range", [0.15, 0.2, 0.25]),
-        "gamma": trial.suggest_categorical("gamma", [0.985, 0.99, 0.995]),
-        "gae_lambda": trial.suggest_categorical("gae_lambda", [0.92, 0.95, 0.98]),
-        "net_arch_size": trial.suggest_categorical("net_arch_size", [128, 256]),
-    }
-
-
-def _harl_space(trial: optuna.Trial) -> Dict[str, Any]:
-    return {
-        "lr": trial.suggest_float("lr", 1e-4, 8e-4, log=True),
-        "critic_lr": trial.suggest_float("critic_lr", 2e-4, 1e-3, log=True),
-        "ppo_epoch": trial.suggest_int("ppo_epoch", 4, 10),
-        "clip_param": trial.suggest_categorical("clip_param", [0.15, 0.2, 0.25]),
-        "entropy_coef": trial.suggest_float("entropy_coef", 0.003, 0.03, log=True),
-        "gamma": trial.suggest_categorical("gamma", [0.985, 0.99, 0.995]),
-        "gae_lambda": trial.suggest_categorical("gae_lambda", [0.92, 0.95, 0.98]),
-        "use_recurrent_policy": trial.suggest_categorical("use_recurrent_policy", [False, True]),
-        "hidden_size": trial.suggest_categorical("hidden_size", [128, 256]),
-    }
-
-
-def _mat_space(trial: optuna.Trial) -> Dict[str, Any]:
-    return {
-        "lr": trial.suggest_float("lr", 1e-4, 7e-4, log=True),
-        "ppo_epoch": trial.suggest_int("ppo_epoch", 5, 15),
-        "clip_param": trial.suggest_categorical("clip_param", [0.1, 0.2, 0.25]),
-        "entropy_coef": trial.suggest_float("entropy_coef", 0.002, 0.03, log=True),
-        "n_block": trial.suggest_categorical("n_block", [1, 2]),
-        "n_embd": trial.suggest_categorical("n_embd", [64, 128]),
-        "n_head": trial.suggest_categorical("n_head", [2, 4]),
-        "gamma": trial.suggest_categorical("gamma", [0.985, 0.99, 0.995]),
-    }
-
-
-# -------------------------------------------------------------------------- objectives
-
-
-def _sb3_objective(
-    cfg_base: Dict[str, Any],
-    study_name: str,
-    args: argparse.Namespace,
-    ckpt: Optional[str] = None,
-    arch: Optional[list] = None,
-) -> Callable[[optuna.Trial], float]:
-    from benchmarks.runners.run_single_agent import run_experiment
-
-    def objective(trial: optuna.Trial) -> float:
-        params = _sb3_space(trial)
-        size = int(params.pop("net_arch_size"))
-        cfg = {
-            **cfg_base,
-            **params,
-            "num_envs": 8,
-            "vec_env": "subproc",
-            "total_steps": args.max_resource,
-            "eval_freq": args.eval_freq,
-            "n_eval_episodes": args.n_eval,
-            "net_arch": [size, size],
-        }
-        init_model_path = None
-        if ckpt:
-            # warm-started policies must keep the Stage 1 trunk; shortcut: the reused
-            # run_experiment only re-applies lr/ent_coef/gamma/gae_lambda/n_epochs.
-            if trial.suggest_categorical("warm_start", [False, True]):
-                init_model_path = ckpt
-                cfg["net_arch"] = list(arch)
-        result = run_experiment(
-            cfg,
-            seed=SEED,
-            device=args.device,
-            steps_override=args.max_resource,
-            run_dir_override=str(_trial_dir(study_name, trial.number)),
-            optuna_trial=trial,
-            init_model_path=init_model_path,
-        )
-        return _finish(trial, study_name, result)
-
-    return objective
-
-
-def _harl_objective(study_name: str, args: argparse.Namespace) -> Callable[[optuna.Trial], float]:
-    from benchmarks.official.harl_runner import run_harl_experiment
-
-    base = _base_config(3, "mappo")
-
-    def objective(trial: optuna.Trial) -> float:
-        params = _harl_space(trial)
-        hidden = int(params.pop("hidden_size"))
-        cfg = {
-            "stage": 3,
-            "algo": "harl_mappo",
-            "partial_obs": bool(base.get("partial_obs", True)),
-            "reward_alpha": float(base.get("reward_alpha", 0.65)),
-            "episode_length": 200,
-            "n_rollout_threads": 32,
-            "total_steps": args.max_resource,
-            "eval_freq": args.eval_freq,
-            "n_eval_episodes": args.n_eval,
-            "hidden_sizes": [hidden, hidden],
-            **params,
-        }
-        result = run_harl_experiment(
-            cfg,
-            seed=SEED,
-            device=args.device,
-            run_dir_override=str(_trial_dir(study_name, trial.number)),
-            optuna_trial=trial,
-        )
-        return _finish(trial, study_name, result)
-
-    return objective
-
-
-def _mat_objective(study_name: str, args: argparse.Namespace) -> Callable[[optuna.Trial], float]:
-    from benchmarks.official.mat_runner import run_mat_experiment
-
-    base = _base_config(3, "mat")
-
-    def objective(trial: optuna.Trial) -> float:
-        cfg = {
-            "stage": 3,
-            "algo": "mat",
-            "partial_obs": bool(base.get("partial_obs", True)),
-            "reward_alpha": float(base.get("reward_alpha", 0.65)),
-            "episode_length": 200,
-            "n_rollout_threads": 32,
-            "total_steps": args.max_resource,
-            "eval_freq": args.eval_freq,
-            "n_eval_episodes": args.n_eval,
-            **_mat_space(trial),
-        }
-        result = run_mat_experiment(
-            cfg,
-            seed=SEED,
-            device=args.device,
-            run_dir_override=str(_trial_dir(study_name, trial.number)),
-            optuna_trial=trial,
-        )
-        return _finish(trial, study_name, result)
-
-    return objective
-
-
-# --------------------------------------------------------------------- stage 1 reuse
-
-
-def _best_trial(study: Optional[optuna.Study]) -> Optional[optuna.trial.FrozenTrial]:
+def best_trial(study: Optional[optuna.Study]) -> Optional[optuna.trial.FrozenTrial]:
     try:
         return study.best_trial if study is not None else None
-    except ValueError:  # study has no COMPLETE trial yet
+    except ValueError:
         return None
 
 
-def _stage1_reference(
-    args: argparse.Namespace, studies: Dict[str, optuna.Study]
-) -> Tuple[Optional[str], Optional[list]]:
-    """Resolve the Stage 1 checkpoint and trunk width used by warm-start trials."""
-    study = studies.get("sb3_ppo_stage1") or _load_study("sb3_ppo_stage1", args.db)
-    arch = None
-    ckpt = args.stage1_best_ckpt
-    best = _best_trial(study)
-    if best is not None:
-        size = best.params.get("net_arch_size")
-        arch = [int(size), int(size)] if size else None
-        if not ckpt and best.user_attrs.get("run_dir"):
-            ckpt = str(_REPO / best.user_attrs["run_dir"] / "checkpoints" / "best.zip")
-    if ckpt and not Path(ckpt).exists():
-        print(f"[sb3_ppo_stage2] Stage 1 checkpoint not found at {ckpt}; warm start disabled")
-        ckpt = None
-    if ckpt and arch is None:
-        from stable_baselines3 import PPO
-
-        model = PPO.load(ckpt, device="cpu")
-        arch = [int(model.policy.mlp_extractor.latent_dim_pi)] * 2
-    return (ckpt, arch) if ckpt and arch else (None, None)
-
-
-# ------------------------------------------------------------------------- study run
+def stage1_reference(db_dir: Path) -> tuple:
+    """Final checkpoint and trunk width of the best Stage 1 trial (seed A)."""
+    best = best_trial(load_study("s1_sb3_ppo", db_dir))
+    if best is None:
+        return None, None
+    ckpt = Path(db_dir) / "s1_sb3_ppo" / f"trial_{best.number}" / f"seed_{TRIAL_SEEDS[0]}" / "checkpoints" / "final.zip"
+    size = int(best.params["net_arch_size"])
+    return (str(ckpt), [size, size]) if ckpt.exists() else (None, None)
 
 
 def _finished(study: optuna.Study) -> int:
     states = (optuna.trial.TrialState.COMPLETE, optuna.trial.TrialState.PRUNED)
-    return sum(1 for trial in study.trials if trial.state in states)
+    return sum(1 for t in study.trials if t.state in states)
 
 
-def _run_study(
-    study_name: str, study: optuna.Study, args: argparse.Namespace, studies: Dict[str, optuna.Study]
-) -> None:
-    if study_name == "sb3_ppo_stage1":
-        objective = _sb3_objective(_base_config(1, "ppo"), study_name, args)
-    elif study_name == "sb3_ppo_stage2":
-        ckpt, arch = _stage1_reference(args, studies)
-        objective = _sb3_objective(_base_config(2, "ppo"), study_name, args, ckpt, arch)
-    elif study_name == "harl_mappo_stage3":
-        objective = _harl_objective(study_name, args)
-    else:
-        objective = _mat_objective(study_name, args)
-
+def run_study(name: str, args: argparse.Namespace) -> None:
+    study = open_study(name, args)
+    if args.enqueue_from and not study.trials:
+        src = best_trial(load_study(args.enqueue_from, args.db_dir))
+        if src is not None:
+            study.enqueue_trial(dict(src.params), skip_if_exists=True)
+            print(f"[{name}] enqueued best params of {args.enqueue_from}", flush=True)
+    objective = make_objective(name, args)
     while _finished(study) < args.trials:
-        remaining = args.trials - _finished(study)
-        print(f"[{study_name}] {_finished(study)} complete/pruned, running {remaining} trial(s)")
-        study.optimize(objective, n_trials=remaining)
+        failed = sum(1 for t in study.trials if t.state == optuna.trial.TrialState.FAIL)
+        if failed >= 5:
+            raise RuntimeError(f"[{name}] {failed} failed trials; stopping")
+        study.optimize(objective, n_trials=1, catch=(RuntimeError, ValueError))
 
 
-# ---------------------------------------------------------------------------- export
+# ------------------------------------------------------------------------------ export
 
 
-def _trial_value(trial: optuna.trial.FrozenTrial) -> Optional[float]:
-    if trial.value is not None:
-        return float(trial.value)
-    if trial.intermediate_values:
-        return float(max(trial.intermediate_values.values()))
-    return None
+def _portable(config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Checkpoint paths relative to the repository, so published summaries carry no local paths."""
+    if not config or "init_model_path" not in config:
+        return config
+    path = Path(config["init_model_path"])
+    if path.is_relative_to(_REPO):
+        path = path.relative_to(_REPO)
+    return {**config, "init_model_path": path.as_posix()}
 
 
-def _summarize(study: optuna.Study) -> Dict[str, Any]:
+def _summary(study: optuna.Study) -> Dict[str, Any]:
     trials = sorted(study.trials, key=lambda t: t.number)
     complete = [t for t in trials if t.state == optuna.trial.TrialState.COMPLETE]
     best = max(complete, key=lambda t: t.value) if complete else None
     importances: Dict[str, float] = {}
-    if len(complete) >= 2:
+    if len(complete) >= 4:
         try:
-            importances = optuna.importance.get_param_importances(study)
-        except Exception as exc:  # noqa: BLE001 - importance is diagnostic, never fatal
-            print(f"[{study.study_name}] param importances unavailable: {exc}")
+            importances = {k: float(v) for k, v in optuna.importance.get_param_importances(study).items()}
+        except Exception as exc:  # noqa: BLE001 - diagnostic only
+            print(f"[{study.study_name}] importances unavailable: {exc}")
     return {
         "best_value": float(best.value) if best else None,
-        "best_params": dict(best.params) if best else {},
         "best_trial": best.number if best else None,
-        "best_run_dir": best.user_attrs.get("run_dir") if best else None,
+        "best_params": dict(best.params) if best else {},
+        "best_config": _portable(best.user_attrs.get("config")) if best else None,
         "n_complete": len(complete),
         "n_pruned": sum(1 for t in trials if t.state == optuna.trial.TrialState.PRUNED),
-        "param_importances": {k: float(v) for k, v in importances.items()},
+        "n_failed": sum(1 for t in trials if t.state == optuna.trial.TrialState.FAIL),
+        "param_importances": importances,
         "trials": [
-            {
-                "number": t.number,
-                "state": t.state.name,
-                "value": _trial_value(t),
-                "params": dict(t.params),
-                "run_dir": t.user_attrs.get("run_dir"),
-            }
+            {"number": t.number, "state": t.state.name, "value": t.value, "params": dict(t.params),
+             "intermediate": {int(k): float(v) for k, v in t.intermediate_values.items()}}
             for t in trials
         ],
     }
 
 
-def _sb3_tuned(params: Dict[str, Any]) -> Dict[str, Any]:
-    tuned = {k: params[k] for k in SB3_KEYS if k in params}
-    if "net_arch_size" in params:
-        tuned["net_arch"] = [int(params["net_arch_size"])] * 2
-    return tuned
+def final_config(study: str, best_config: Dict[str, Any], final_steps: int) -> Dict[str, Any]:
+    """Tuned config for the final runs: same hyperparameters, final budget, test-split scoring."""
+    cfg = {k: v for k, v in best_config.items() if k not in ("final_eval_split", "init_model_path")}
+    cfg.update(total_steps=final_steps, eval_freq=final_steps // 20, n_eval_episodes=16,
+               n_test_episodes=32, exp_name=study)
+    return cfg
 
 
-def _harl_cfg(algo: str, stage: int, params: Dict[str, Any], base: Dict[str, Any]) -> Dict[str, Any]:
-    tuned = {k: params[k] for k in HARL_KEYS if k in params}
-    if "hidden_size" in params:
-        tuned["hidden_sizes"] = [int(params["hidden_size"])] * 2
-    return {
-        "stage": stage,
-        "algo": f"harl_{algo}",
-        "exp_name": f"stage{stage}_harl_{algo}",
-        "total_steps": int(base["total_steps"]),
-        "episode_length": 200,
-        "n_rollout_threads": 32,
-        "partial_obs": bool(base.get("partial_obs", True)),
-        "reward_alpha": float(base.get("reward_alpha", 0.65)),
-        # only MAPPO keeps parameter sharing at Stage 3; HA algos and Stage 4 need separate actors
-        "share_param": algo == "mappo" and stage == 3,
-        "eval_freq": 100_000,
-        "n_eval_episodes": 10,
-        **tuned,
-    }
+def best_per_category(study: optuna.Study) -> Dict[str, optuna.trial.FrozenTrial]:
+    """Best complete trial per warm-start category ("scratch"/"bc", or "scratch"/"transfer" for SB3)."""
+    best: Dict[str, optuna.trial.FrozenTrial] = {}
+    for t in study.trials:
+        if t.state != optuna.trial.TrialState.COMPLETE:
+            continue
+        ws = t.params.get("warm_start", "scratch")
+        tag = {True: "transfer", False: "scratch"}.get(ws, ws)
+        if tag not in best or t.value > best[tag].value:
+            best[tag] = t
+    return best
 
 
-def _mat_cfg(stage: int, params: Dict[str, Any], base: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "stage": stage,
-        "algo": "mat",
-        "exp_name": f"stage{stage}_official_mat",
-        "total_steps": int(base["total_steps"]),
-        "episode_length": 200,
-        "n_rollout_threads": 32,
-        "partial_obs": bool(base.get("partial_obs", True)),
-        "reward_alpha": float(base.get("reward_alpha", 0.65)),
-        "eval_freq": 100_000,
-        "n_eval_episodes": 10,
-        **{k: params[k] for k in MAT_KEYS if k in params},
-    }
-
-
-def _official_configs(
-    bests: Dict[str, Dict[str, Any]],
-    ckpt: Optional[str],
-    arch: Optional[list],
-) -> Dict[str, Dict[str, Any]]:
-    configs: Dict[str, Dict[str, Any]] = {}
-    if bests.get("sb3_ppo_stage1"):
-        configs["stage1_ppo.yaml"] = {
-            **_base_config(1, "ppo"),
-            **_sb3_tuned(bests["sb3_ppo_stage1"]),
-        }
-
-    stage2 = bests.get("sb3_ppo_stage2")
-    if stage2:
-        cfg_scratch = {**_base_config(2, "ppo"), **_sb3_tuned(stage2), "warm_start": False}
-        configs["stage2_ppo.yaml"] = cfg_scratch
-        cfg_transfer = {**_base_config(2, "ppo"), **_sb3_tuned(stage2), "warm_start": True}
-        if ckpt and arch:
-            cfg_transfer["init_model_path"] = _rel(ckpt)
-            cfg_transfer["net_arch"] = list(arch)
-        configs["stage2_ppo_transfer.yaml"] = cfg_transfer
-
-    harl = bests.get("harl_mappo_stage3")
-    if harl:
-        for stage, base in ((3, _base_config(3, "mappo")), (4, _base_config(4, "happo"))):
-            for algo in HARL_ALGOS:
-                configs[f"stage{stage}_harl_{algo}.yaml"] = _harl_cfg(algo, stage, harl, base)
-
-    mat = bests.get("official_mat_stage3")
-    if mat:
-        configs["stage3_official_mat.yaml"] = _mat_cfg(3, mat, _base_config(3, "mat"))
-        configs["stage4_official_mat.yaml"] = _mat_cfg(4, mat, _base_config(4, "happo"))
-    return configs
-
-
-def _export(studies: Dict[str, optuna.Study], args: argparse.Namespace) -> None:
-    entries: Dict[str, Any] = {}
+def export(args: argparse.Namespace) -> None:
+    entries = {}
     for name in STUDIES:
-        study = studies.get(name) or _load_study(name, args.db)
+        study = load_study(name, args.db_dir)
         if study is not None:
-            entries[name] = _summarize(study)
-
-    bests = {name: e["best_params"] for name, e in entries.items() if e["best_value"] is not None}
-    ckpt, arch = _stage1_reference(args, studies)
+            entries[name] = _summary(study)
     written = []
-    for filename, cfg in _official_configs(bests, ckpt, arch).items():
-        path = CONFIG_DIR / filename
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(cfg, f, sort_keys=False)
-        written.append(_rel(path))
-
-    summary: Dict[str, Any] = {}
-    if SUMMARY_PATH.exists():
-        with open(SUMMARY_PATH, "r", encoding="utf-8") as f:
-            summary = json.load(f)
-    summary["studies"] = {**summary.get("studies", {}), **entries}
-    summary["exported_configs"] = sorted(set(summary.get("exported_configs", [])) | set(written))
-    summary.update(
-        {
-            "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "db": _rel(args.db),
-            "seed": SEED,
-            "trials_per_study": args.trials,
-            "resources": {
-                "min_resource": args.min_resource,
-                "max_resource": args.max_resource,
-                "eval_freq": args.eval_freq,
-            },
-            "sampler": "TPESampler(multivariate=True, seed=42)",
-            "pruner": (
-                f"HyperbandPruner(min_resource={args.min_resource}, "
-                f"max_resource={args.max_resource}, reduction_factor=3)"
-            ),
-        }
-    )
+    for name in entries:
+        stage, _ = _parse(name)
+        steps = args.final_steps_sa if stage in (1, 2) else args.final_steps_marl
+        # One config per warm-start category, so final tables show scratch and warm-start rows.
+        for tag, trial in best_per_category(load_study(name, args.db_dir)).items():
+            path = CONFIG_DIR / f"{name}_{tag}.yaml"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(f"# Exported by benchmarks.official.bohb_tune from study {name}, trial {trial.number} "
+                        f"(mean final val return {trial.value:.3f}).\n")
+                yaml.safe_dump(final_config(f"{name}_{tag}", trial.user_attrs["config"], steps), f, sort_keys=False)
+            written.append(path.relative_to(_REPO).as_posix())
+    summary = {
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "protocol": {
+            "sampler": f"TPESampler(multivariate=True, seed={SAMPLER_SEED})",
+            "pruner": f"HyperbandPruner(min_resource={args.min_resource}, max_resource={args.max_resource}, reduction_factor=3)",
+            "trial_seeds": list(TRIAL_SEEDS),
+            "objective": f"mean over seeds of the final policy's return on {args.n_final} val episodes",
+        },
+        "studies": entries,
+        "exported_configs": written,
+    }
     SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(SUMMARY_PATH, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
-    print(f"Exported {len(written)} config(s) and {_rel(SUMMARY_PATH)}")
-
-
-# ------------------------------------------------------------------------------ main
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Optuna BOHB tuning (multivariate TPE + Hyperband) for DotShot official benchmarks."
-    )
-    parser.add_argument("--study", choices=[*STUDIES, "all"], default="all")
-    parser.add_argument("--trials", type=int, default=16, help="Complete+pruned trials per study")
-    parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"])
-    parser.add_argument("--min-resource", type=int, default=50_000, help="Hyperband minimum steps")
-    parser.add_argument("--max-resource", type=int, default=350_000, help="Steps per trial and Hyperband maximum")
-    parser.add_argument("--eval-freq", type=int, default=50_000, help="Env steps between pruner reports")
-    parser.add_argument("--n-eval", type=int, default=6, help="Episodes per evaluation")
-    parser.add_argument("--stage1-best-ckpt", type=str, default=None, help="Stage 1 checkpoint for warm start")
-    parser.add_argument("--db", type=str, default=str(_REPO / "runs" / "optuna_bohb.db"))
-    parser.add_argument("--export-only", action="store_true", help="Re-export configs and summary from the DB")
-    return parser.parse_args()
+    SUMMARY_PATH.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"exported {len(written)} config(s) and {SUMMARY_PATH.relative_to(_REPO).as_posix()}")
 
 
 def main() -> None:
-    args = _parse_args()
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--study", choices=STUDIES)
+    parser.add_argument("--trials", type=int, default=24, help="complete + pruned trials per study")
+    parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    # Resources count decisions; at the default 8-tick interval 125k = 1M ticks and 500k = 4M ticks.
+    parser.add_argument("--min-resource", type=int, default=125_000)
+    parser.add_argument("--max-resource", type=int, default=500_000)
+    parser.add_argument("--eval-freq", type=int, default=62_500)
+    parser.add_argument("--final-steps-sa", type=int, default=500_000, help="decisions per final SB3 run")
+    parser.add_argument("--final-steps-marl", type=int, default=1_500_000, help="decisions per final MARL run")
+    parser.add_argument("--n-eval", type=int, default=16, help="val episodes per pruning report")
+    parser.add_argument("--n-final", type=int, default=32, help="val episodes scoring the final policy")
+    parser.add_argument("--enqueue-from", default=None, help="study whose best params become the first trial")
+    parser.add_argument("--db-dir", type=Path, default=OPTUNA_DIR)
+    parser.add_argument("--export-only", action="store_true")
+    args = parser.parse_args()
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    if args.device == "cuda":
-        import torch
-
-        if not torch.cuda.is_available():
-            print("CUDA unavailable, falling back to CPU")
-            args.device = "cpu"
-
-    studies: Dict[str, optuna.Study] = {}
     if args.export_only:
-        _export(studies, args)
+        export(args)
         return
-
-    requested = STUDIES if args.study == "all" else (args.study,)
-    for study_name in requested:
-        study = _open_study(study_name, args)
-        studies[study_name] = study
-        _run_study(study_name, study, args, studies)
-
-    _export(studies, args)
+    if not args.study:
+        parser.error("--study is required unless --export-only")
+    run_study(args.study, args)
+    export(args)
 
 
 if __name__ == "__main__":

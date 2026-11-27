@@ -1,64 +1,14 @@
 """Tests for the unmodified-upstream HARL and MAT adapters on DotShot Stages 3 and 4."""
 
 import json
-import math
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 
-from benchmarks.official.mat_dotshot_env import (
-    DummyMATVecEnv,
-    DotShotContinuousMATEnv,
-    continuous_to_multidiscrete,
-)
-
-
-def _continuous_action(dx: float = 0.0, dy: float = 0.0, angle: float = 0.0, weapon: int = 0):
-    action = np.zeros(8, dtype=np.float32)
-    action[0] = dx
-    action[1] = dy
-    action[2] = math.cos(angle)
-    action[3] = math.sin(angle)
-    action[4 + weapon] = 1.0
-    return action
-
-
-def test_continuous_to_multidiscrete_wraparound_and_weapons():
-    # Direction thresholds are strict, so exactly -0.33 and 0.33 map to "stay".
-    for value, expected in [
-        (-1.0, 0),
-        (-0.34, 0),
-        (-0.33, 1),
-        (0.0, 1),
-        (0.33, 1),
-        (0.34, 2),
-        (1.0, 2),
-    ]:
-        action = _continuous_action(dx=value, dy=value)
-        decoded = continuous_to_multidiscrete(action)
-        assert decoded.dtype == np.int64
-        assert decoded.shape == (4,)
-        assert decoded[0] == expected
-        assert decoded[1] == expected
-
-    for angle, expected_bin in [
-        (0.0, 0),
-        (0.5 * math.pi, 8),
-        (math.pi, 16),
-        (1.5 * math.pi, 24),
-        (0.97 * 2.0 * math.pi, 31),
-        (2.0 * math.pi, 0),
-    ]:
-        decoded = continuous_to_multidiscrete(_continuous_action(angle=angle))
-        assert decoded[2] == expected_bin
-
-    for weapon in range(4):
-        decoded = continuous_to_multidiscrete(_continuous_action(weapon=weapon))
-        assert decoded[3] == weapon
-
-    assert continuous_to_multidiscrete(_continuous_action(angle=math.pi), aim_bins=8)[2] == 4
+from benchmarks.official.mat_dotshot_env import DummyMATVecEnv, DotShotMATEnv
+from dotshot.core.engine import OBS_DIM
 
 
 def test_mat_env_and_smoke_cuda(tmp_path):
@@ -66,20 +16,20 @@ def test_mat_env_and_smoke_cuda(tmp_path):
         pytest.skip("CUDA is required for the official adapter smoke test")
 
     for stage in (3, 4):
-        env = DotShotContinuousMATEnv(stage=stage, max_steps=40, seed=0)
+        env = DotShotMATEnv(stage=stage, max_steps=40, seed=0)
         assert len(env.action_space) == env.n_agents
-        assert all(space.shape == (8,) for space in env.action_space)
-        assert all(space.shape == (129,) for space in env.observation_space)
+        assert all(list(space.nvec) == [3, 3, 32, 4] for space in env.action_space)
+        assert all(space.shape == (OBS_DIM,) for space in env.observation_space)
         assert all(
             space.shape == env.share_observation_space[0].shape
             for space in env.share_observation_space
         )
 
         obs, share_obs = env.reset()
-        assert obs.shape == (env.n_agents, 129)
+        assert obs.shape == (env.n_agents, OBS_DIM)
         assert share_obs.shape == (env.n_agents, env.share_observation_space[0].shape[0])
-        obs, share_obs, rewards, dones, infos = env.step(np.zeros((env.n_agents, 8)))
-        assert obs.shape == (env.n_agents, 129)
+        obs, share_obs, rewards, dones, infos = env.step(np.ones((env.n_agents, 4), dtype=np.int64))
+        assert obs.shape == (env.n_agents, OBS_DIM)
         assert rewards.shape == (env.n_agents, 1)
         assert rewards.dtype == np.float32
         assert dones.shape == (env.n_agents,)
@@ -88,19 +38,22 @@ def test_mat_env_and_smoke_cuda(tmp_path):
 
     # The dummy vector env must reset each thread as soon as its episode ends.
     vec = DummyMATVecEnv(
-        [DotShotContinuousMATEnv(stage=3, max_steps=2, seed=1) for _ in range(2)]
+        [DotShotMATEnv(stage=3, max_steps=2, seed=1) for _ in range(2)]
     )
     obs, share_obs, available = vec.reset()
     assert available is None
-    assert obs.shape == (2, vec.envs[0].n_agents, 129)
+    assert obs.shape == (2, vec.envs[0].n_agents, OBS_DIM)
     for _ in range(2):
         obs, share_obs, rewards, dones, infos, available = vec.step(
-            np.zeros((2, vec.envs[0].n_agents, 8), dtype=np.float32)
+            np.ones((2, vec.envs[0].n_agents, 4), dtype=np.int64)
         )
         assert available is None
     assert dones.shape == (2, vec.envs[0].n_agents)
     assert bool(np.all(dones))
     assert vec.envs[0].env.engine.step_count == 0
+    # v2.2: reaching max_steps on Stage 3 is a terminal victory, not a time-limit truncation.
+    assert infos[0][0]["win"] == 1.0 and not infos[0][0]["bad_transition"]
+    assert "terminal_obs" in infos[0][0]
     vec.close()
 
     from benchmarks.official.mat_runner import run_mat_experiment
@@ -113,8 +66,8 @@ def test_mat_env_and_smoke_cuda(tmp_path):
             "total_steps": 640,
             "episode_length": 80,
             "n_rollout_threads": 4,
-            "n_eval_rollout_threads": 2,
             "n_eval_episodes": 2,
+            "n_test_episodes": 2,
             "eval_freq": 320,
             "partial_obs": True,
             "reward_alpha": 0.5,
@@ -131,8 +84,8 @@ def test_mat_env_and_smoke_cuda(tmp_path):
             config, seed=0, device="cuda", run_dir_override=str(run_dir)
         )
         assert Path(result["run_dir"]) == run_dir
-        assert "best_return" in result
-        assert "eval/return_mean" in result["final_metrics"]
+        assert "best_val_return" in result
+        assert "test/return_mean" in result["final_metrics"]
 
         metrics_path = run_dir / "metrics.jsonl"
         assert metrics_path.exists()
@@ -158,9 +111,9 @@ def test_mat_env_and_smoke_cuda(tmp_path):
             ckpt_dir = run_dir / "checkpoints" / split
             assert (ckpt_dir / "transformer.pt").exists()
             meta = json.loads((ckpt_dir / "meta.json").read_text())
-            assert meta["act_dim"] == 8
+            assert meta["nvec"] == [3, 3, 32, 4]
             assert meta["stage"] == stage
-            assert meta["obs_dim"] == 129
+            assert meta["obs_dim"] == OBS_DIM
             assert meta["n_agents"] > 0
             state_dict = torch.load(ckpt_dir / "transformer.pt", map_location="cpu")
             assert state_dict
@@ -197,7 +150,7 @@ def test_harl_env_spaces_and_smoke_cuda(algo, stage, tmp_path):
         "eval_freq": 640,
         "eval_interval": 640,
         "n_eval_episodes": 2,
-        "eval_episodes": 2,
+        "n_test_episodes": 2,
         "partial_obs": True,
         "reward_alpha": 0.5,
         "max_steps": 100,

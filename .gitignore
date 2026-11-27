@@ -10,12 +10,12 @@ __pycache__/
 # Training Outputs & Heavy Binaries
 tb_log/
 runs/
-legacy_v1/models/*
 models_marl/*
 *.pt
 *.pth
 *.zip
 *.db
+*.journal
 *.sqlite
 runs/optuna_*.db*
 run_tuning.sh

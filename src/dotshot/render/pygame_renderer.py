@@ -74,6 +74,8 @@ class DotShotPygameRenderer:
         self.shake_intensity = 0
         self.show_marl_overlay = True
         self.quit_requested = False
+        # Own RNG: drawing must never consume the simulator's random stream.
+        self.rng = np.random.default_rng(0)
 
     def _get_glow_sprite(self, color: Tuple[int, int, int], radius: int, glow_radius: int, alpha: int) -> pygame.Surface:
         key = (color, radius, glow_radius, alpha)
@@ -130,7 +132,7 @@ class DotShotPygameRenderer:
         return bg
 
     def _ingest_events(self, engine: Any) -> None:
-        rng = engine.np_random
+        rng = self.rng
         for ev in getattr(engine, "visual_events", []):
             etype = ev.get("type")
             if etype == "spark" and len(self.particles) < 380:
@@ -338,8 +340,8 @@ class DotShotPygameRenderer:
         ox, oy = 0, 0
         if self.shake_timer > 0:
             self.shake_timer -= 1
-            ox = int(engine.np_random.integers(-self.shake_intensity, self.shake_intensity + 1))
-            oy = int(engine.np_random.integers(-self.shake_intensity, self.shake_intensity + 1))
+            ox = int(self.rng.integers(-self.shake_intensity, self.shake_intensity + 1))
+            oy = int(self.rng.integers(-self.shake_intensity, self.shake_intensity + 1))
             if self.shake_timer == 0:
                 self.shake_intensity = 0
 

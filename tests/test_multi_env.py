@@ -6,6 +6,7 @@ from pettingzoo.test import parallel_api_test
 import pytest
 
 from dotshot.core.config import ELEMENT_FIRE, ELEMENT_GRASS, ELEMENT_WATER
+from dotshot.core.engine import OBS_DIM
 from dotshot.core.entities import Enemy
 from dotshot.envs.multi_agent import DotShotParallelEnv
 
@@ -23,7 +24,7 @@ def test_global_state_and_local_obs_contracts(stage, num_agents):
     obs, infos = env.reset(seed=77)
     assert len(obs) == num_agents
     for name in env.possible_agents:
-        assert obs[name].shape == (129,)
+        assert obs[name].shape == (OBS_DIM,)
         assert obs[name].dtype == np.float32
         assert np.all(obs[name] >= -1.0) and np.all(obs[name] <= 1.0)
 
@@ -95,8 +96,8 @@ def test_stage4_heterogeneous_roles_and_abilities():
 
 def test_reward_alpha_mixing_and_offscreen_render():
     os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
-    env_ind = DotShotParallelEnv(stage=3, reward_alpha=0.0, render_mode="rgb_array")
-    env_team = DotShotParallelEnv(stage=3, reward_alpha=1.0)
+    env_ind = DotShotParallelEnv(stage=3, reward_alpha=0.0, reward_mode="mixed", render_mode="rgb_array")
+    env_team = DotShotParallelEnv(stage=3, reward_alpha=1.0, reward_mode="mixed")
     env_ind.reset(seed=55)
     env_team.reset(seed=55)
 

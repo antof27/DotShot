@@ -1,0 +1,23 @@
+# Exported by benchmarks.official.bohb_tune from study s4_mat, trial 12 (mean final val return 102.115).
+# Final runs: 500k decisions = 4M ticks, the budget the search tuned for.
+algo: mat
+episode_length: 200
+n_rollout_threads: 32
+use_linear_lr_decay: true
+stage: 4
+total_steps: 500000
+eval_freq: 25000
+n_eval_episodes: 16
+n_test_episodes: 32
+lr: 6.154285379722923e-05
+entropy_coef: 0.007868373211306002
+clip_param: 0.1
+ppo_epoch: 4
+num_mini_batch: 4
+gamma: 0.98
+gae_lambda: 0.9
+n_block: 1
+n_embd: 128
+n_head: 1
+warm_start: bc
+exp_name: s4_mat_bc

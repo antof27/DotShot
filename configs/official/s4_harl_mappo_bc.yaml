@@ -1,0 +1,27 @@
+# Exported by benchmarks.official.bohb_tune from study s4_harl_mappo, trial 11 (mean final val return 109.054).
+# Final runs: 500k decisions = 4M ticks, the budget the search tuned for.
+algo: harl_mappo
+episode_length: 200
+n_rollout_threads: 32
+use_linear_lr_decay: true
+stage: 4
+total_steps: 500000
+eval_freq: 25000
+n_eval_episodes: 16
+n_test_episodes: 32
+critic_lr: 0.0005893209224849241
+critic_epoch: 7
+critic_num_mini_batch: 1
+entropy_coef: 0.023240677463819845
+gamma: 0.98
+gae_lambda: 0.95
+lr: 5.548453055467813e-05
+actor_num_mini_batch: 8
+ppo_epoch: 6
+clip_param: 0.3
+hidden_sizes:
+- 256
+- 256
+warm_start: bc
+critic_warmup_updates: 10
+exp_name: s4_harl_mappo_bc

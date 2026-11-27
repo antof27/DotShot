@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dotshot"
-version = "2.0.0"
-description = "DotShot Game v2: Tactical Single-to-Multi-Agent RL Simulator and CTDE Benchmark Suite"
+version = "2.2.0"
+description = "DotShot v2.2: a four-stage arena shooter for single- and multi-agent reinforcement learning"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -35,3 +35,5 @@ include = ["dotshot*", "benchmarks*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-m 'not slow'"
+markers = ["slow: multi-minute training sanity checks (run with `pytest -m slow`)"]

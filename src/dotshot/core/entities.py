@@ -71,6 +71,18 @@ class AgentState:
         self.last_weapon = -1
         self.aim_dx = 1.0
         self.aim_dy = 0.0
+        self.spawn_x, self.spawn_y = self.x, self.y
+        self.respawn_timer = 0  # ticks until a dead agent respawns (v2.2 core stages)
+
+    def respawn(self) -> None:
+        """Return to the spawn point with full HP and cleared timers."""
+        self.x, self.y = self.spawn_x, self.spawn_y
+        self.vx = self.vy = 0.0
+        self.hp = self.max_hp
+        self.fire_cooldown = self.ability_cooldown = 0
+        self.shield_active_timer = self.repair_pulse_timer = 0
+        self.respawn_timer = 0
+        self.alive = True
 
     def take_damage(self, amount: float) -> float:
         if not self.alive:

@@ -1,33 +1,29 @@
-# DotShot Game v2: Multi-Agent RL Research Handbook
+# DotShot: Multi-Agent RL Handbook
 
-This handbook documents **DotShot Game v2**, a tactical 2D cooperative shooter simulator paired with a reproducible single-agent and multi-agent Reinforcement Learning (MARL) benchmark suite. Theory, simulator engineering, and experimental results update together after every milestone.
+This handbook documents DotShot, a 2D arena shooter with a four-stage curriculum for single- and multi-agent reinforcement learning, together with the learners trained on it and the results. The theory, the simulator and the experiments are kept in step with the code.
 
----
+| Chapter | Contents |
+| :--- | :--- |
+| [1. From Single-Agent RL to MARL](01-evolution-rl-to-marl.md) | MDPs, policy gradients, GAE, TRPO and PPO; stochastic games and Dec-POMDPs; why independent learners struggle; common implementation pitfalls |
+| [2. Cooperative MARL Algorithms](02-sota-marl-taxonomy.md) | CTDE; value factorisation (VDN, QMIX, QTRAN, QPLEX); centralised critics (MADDPG, COMA, MA-POCA); MAPPO; HAPPO, HATRPO and HARL; MAT; evaluation standards |
+| [3. DotShot Simulator Specification](03-dotshot-simulator-spec.md) | The four stages, entities, the `MultiDiscrete([3, 3, 32, 4])` action space, the 166-value observation, the global state, every reward term, calibration and the behaviour audit |
+| [4. Experiments and Results](04-experiments-log.md) | Hardware, protocol and baselines; how the benchmark became learnable; hyperparameter search; final 5-seed results |
 
-## Handbook Structure
+The [report](paper/dotshot_marl_report.pdf) presents the same material as a single paper.
 
-| Chapter | Focus | Key Topics Covered |
-| :--- | :--- | :--- |
-| [1. Evolution from Single-Agent RL to MARL](01-evolution-rl-to-marl.md) | Foundations & Pathologies | MDPs, Bellman equations, Policy Gradient Theorem, GAE, TRPO, PPO, Stochastic Games, Dec-POMDPs, non-stationarity, credit assignment, joint action scaling |
-| [2. State of the Art in Cooperative MARL](02-sota-marl-taxonomy.md) | CTDE Algorithms & Proofs | CTDE, IGM, VDN, QMIX, QTRAN, QPLEX, MADDPG, COMA, MA-POCA, IPPO, MAPPO, HAPPO, HATRPO, HARL/HAML, MAT/PMAT/RoMAT, *rliable* statistics |
-| [3. DotShot Game v2 Simulator Spec](03-dotshot-simulator-spec.md) | Environment & Engineering | `1440×960` cover/LOS geometry, 4-stage curriculum, `MultiDiscrete([3,3,32,4])` factorization, `129`-dim observation schema, v1-to-v2 post-mortem |
-| [4. Living Experiments & Benchmark Log](04-experiments-log.md) | Empirical Benchmarks | Hardware & seed protocol, Stage 1–2 single-agent baselines vs PPO, Stage 3 cooperative MARL benchmarks, IQM + 95% bootstrap CIs, replays |
+## Reproducing
 
----
-
-## Reproducibility Quickstart
-
-All handbook experiments run inside the Windows Python 3.11 CUDA environment (`RL/RL-game1/.venv`) driven by versioned YAML files under `configs/`.
+All commands run from the repository root in the project environment (`.venv`, Python 3.11):
 
 ```powershell
 # Serve this handbook locally
 python -m http.server 8080 --directory docs
 
-# Run the automated citation, link, and prose quality gate
-.\.venv\Scripts\python.exe scripts/validate_docs.py
+# Check citations and links
+.\.venv\Scripts\python.exe scripts\validate_docs.py
 
-# Run full simulator & MARL test suite
-.\.venv\Scripts\python.exe -m pytest tests/ -v
+# Run the test suite
+.\.venv\Scripts\python.exe -m pytest
 ```
 
-Every inline citation tag (`[@key]`) in these chapters resolves directly to verified primary entries in [references.bib](references.bib).
+Citations of the form `[@key]` resolve to verified entries in [references.bib](references.bib).

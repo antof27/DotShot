@@ -21,6 +21,8 @@ class DotShotParallelEnv(ParallelEnv):
         partial_obs: Optional[bool] = None,
         reward_alpha: Optional[float] = None,
         max_steps: Optional[int] = None,
+        reward_mode: Optional[str] = None,
+        env_overrides: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
         if stage not in (3, 4):
@@ -32,6 +34,8 @@ class DotShotParallelEnv(ParallelEnv):
             partial_obs=partial_obs,
             reward_alpha=reward_alpha,
             max_steps=max_steps,
+            reward_mode=reward_mode,
+            env_overrides=env_overrides,
         )
 
         self.possible_agents: List[str] = [f"agent_{i}" for i in range(self.engine.cfg.num_agents)]

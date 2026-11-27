@@ -1,6 +1,17 @@
-"""Thin adapter that trains unmodified HARL algorithms on DotShot Stages 3 and 4."""
+"""Thin adapter that trains HARL algorithms on DotShot Stages 3 and 4.
+
+``third_party/HARL`` stays unmodified. Two upstream behaviours are patched here
+for DotShot's ``MultiDiscrete([3, 3, 32, 4])`` actions:
+
+* PPO ratio (finding A): HARL stores the joint log-prob in all 4 buffer columns,
+  so ``action_aggregation="prod"`` computes r**4. This runner defaults to
+  ``"mean"``, which recovers the true joint ratio r.
+* Entropy (finding B): upstream builds a (B, B) tensor per branch; the patched
+  ``ACTLayer.evaluate_actions`` averages each branch entropy over active rows.
+"""
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -15,16 +26,49 @@ from harl.common.buffers.on_policy_critic_buffer_ep import OnPolicyCriticBufferE
 from harl.common.buffers.on_policy_critic_buffer_fp import OnPolicyCriticBufferFP
 from harl.common.valuenorm import ValueNorm
 from harl.envs.env_wrappers import ShareDummyVecEnv
+from harl.models.base.act import ACTLayer
 from harl.models.policy_models.stochastic_policy import StochasticPolicy
 from harl.runners.on_policy_ha_runner import OnPolicyHARunner
 from harl.runners.on_policy_ma_runner import OnPolicyMARunner
 
+from benchmarks.eval.marl_eval import evaluate_marl
 from benchmarks.official.harl_dotshot_env import DotShotHARLEnv
 from benchmarks.utils.logger import ExperimentLogger
-from benchmarks.utils.seeding import seed_everything
-from dotshot.envs.multi_agent import DotShotParallelEnv
+from benchmarks.utils.seeding import configure_torch, seed_everything
 
 _BASE_ALGOS = ("mappo", "happo", "hatrpo", "haa2c")
+
+
+# ------------------------------------------------------------ entropy patch (B)
+
+_ORIGINAL_ACT_EVALUATE = ACTLayer.evaluate_actions
+
+
+def _act_evaluate_actions(self, x, action, available_actions=None, active_masks=None):
+    """Upstream ``ACTLayer.evaluate_actions`` with a masked MultiDiscrete entropy.
+
+    Each branch entropy is averaged over active rows, then branches are summed, which
+    equals upstream's value when every row is active (so ``entropy_coef`` keeps its scale).
+    """
+    if not self.multidiscrete_action:
+        return _ORIGINAL_ACT_EVALUATE(self, x, action, available_actions, active_masks)
+    log_probs, entropies = [], []
+    for action_out, act in zip(self.action_outs, torch.transpose(action, 0, 1)):
+        dist = action_out(x)
+        log_probs.append(dist.log_probs(act.unsqueeze(-1)))
+        ent = dist.entropy()
+        if active_masks is None:
+            entropies.append(ent.mean())
+        else:
+            mask = active_masks.reshape(-1)
+            entropies.append((ent * mask).sum() / mask.sum().clamp(min=1.0))
+    return torch.cat(log_probs, dim=-1).sum(dim=-1, keepdim=True), torch.stack(entropies).sum(), None
+
+
+ACTLayer.evaluate_actions = _act_evaluate_actions
+
+
+# --------------------------------------------------------- HATRPO MultiDiscrete
 
 
 class FixedCategorical:
@@ -43,7 +87,9 @@ _ORIGINAL_POLICY_EVALUATE = StochasticPolicy.evaluate_actions
 _trpo_compat_enabled = False
 
 # shortcut: relies on HARL's class-name KL dispatch and MultiDiscrete head layout;
-# remove once upstream HATRPO supports MultiDiscrete directly.
+# remove once upstream HATRPO supports MultiDiscrete directly. The KL is HARL's
+# kl_approx over the 42 concatenated log-probs, the same approximation upstream
+# applies to Discrete actions.
 
 
 def _evaluate_actions_with_factorized_logits(
@@ -204,68 +250,55 @@ class _DotShotHARLRunner(OnPolicyHARunner):
         )
         self.save_dir: Optional[str] = None
 
-    @torch.no_grad()
-    def evaluate(
-        self, env: DotShotParallelEnv, n_episodes: int, seed: int
-    ) -> Dict[str, float]:
-        """Run deterministic episodes on a clean DotShot environment."""
-        self.prep_rollout()
-        returns: List[float] = []
-        wins: List[float] = []
-        core_hp: List[float] = []
-        elem_acc: List[float] = []
-        kills: List[float] = []
-        boss_kills: List[float] = []
-        shield_breaks: List[float] = []
+    def train_step(self, algo: str, critic_only: bool = False) -> Dict[str, float]:
+        """One upstream update; returns the mean of HARL's train infos.
 
-        for episode in range(max(1, n_episodes)):
-            obs, _ = env.reset(seed=seed + episode * 7919)
-            rnn_states = np.zeros(
-                (self.num_agents, self.recurrent_n, self.rnn_hidden_size),
-                dtype=np.float32,
-            )
-            masks = np.ones((1, 1), dtype=np.float32)
-            episode_return = 0.0
-            last_info: Dict[str, Any] = {}
-
-            while True:
-                agent_actions: Dict[str, np.ndarray] = {}
-                for agent_id, agent in enumerate(env.possible_agents):
-                    action, new_rnn_state = self.actor[agent_id].act(
-                        np.expand_dims(obs[agent], axis=0),
-                        rnn_states[agent_id : agent_id + 1],
-                        masks,
-                        deterministic=True,
-                    )
-                    agent_actions[agent] = action[0].cpu().numpy()
-                    rnn_states[agent_id] = new_rnn_state[0].cpu().numpy()
-
-                obs, rewards, terminations, truncations, infos = env.step(agent_actions)
-                episode_return += float(
-                    np.mean([rewards.get(agent, 0.0) for agent in env.possible_agents])
-                )
-                last_info = infos[env.possible_agents[0]]
-                if any(terminations.values()) or any(truncations.values()):
-                    break
-
-            returns.append(episode_return)
-            wins.append(float(last_info.get("win", 0.0)))
-            core_hp.append(float(last_info.get("core_hp_ratio", 1.0)))
-            elem_acc.append(float(last_info.get("elemental_accuracy", 0.0)))
-            kills.append(float(last_info.get("kills", 0.0)))
-            boss_kills.append(float(last_info.get("boss_kills", 0.0)))
-            shield_breaks.append(float(last_info.get("shield_breaks", 0.0)))
-
-        return {
-            "eval/return_mean": float(np.mean(returns)),
-            "eval/return_std": float(np.std(returns)),
-            "eval/win_rate": float(np.mean(wins)),
-            "eval/core_hp_ratio": float(np.mean(core_hp)),
-            "eval/elemental_accuracy": float(np.mean(elem_acc)),
-            "eval/kills_mean": float(np.mean(kills)),
-            "eval/boss_kills_mean": float(np.mean(boss_kills)),
-            "eval/shield_breaks_mean": float(np.mean(shield_breaks)),
+        ``critic_only`` trains just the critic (warm-up after behaviour cloning, so the
+        first policy updates use meaningful advantages instead of an untrained critic).
+        """
+        if critic_only:
+            info = self.critic.train(self.critic_buffer, self.value_normalizer)
+            return {f"train/{k}": _scalar(v) for k, v in info.items()}
+        if algo == "mappo":
+            actor_infos, critic_info = OnPolicyMARunner.train(self)
+        else:
+            actor_infos, critic_info = OnPolicyHARunner.train(self)
+        out = {
+            f"train/{k}": float(np.mean([_scalar(info[k]) for info in actor_infos]))
+            for k in actor_infos[0]
         }
+        out.update({f"train/{k}": _scalar(v) for k, v in critic_info.items()})
+        return out
+
+
+def _scalar(value: Any) -> float:
+    if torch.is_tensor(value):
+        value = value.detach().cpu().numpy()
+    return float(np.mean(value))
+
+
+class HARLEvalPolicy:
+    """Deterministic per-agent HARL actors behind the ``marl_eval`` policy interface."""
+
+    def __init__(self, runner: _DotShotHARLRunner):
+        self.runner = runner
+
+    def reset(self, env) -> None:
+        r = self.runner
+        r.prep_rollout()
+        self.rnn = np.zeros((r.num_agents, r.recurrent_n, r.rnn_hidden_size), dtype=np.float32)
+        self.masks = np.ones((1, 1), dtype=np.float32)
+
+    @torch.no_grad()
+    def act(self, env, obs) -> Dict[str, np.ndarray]:
+        out = {}
+        for i, name in enumerate(env.possible_agents):
+            action, rnn = self.runner.actor[i].act(
+                obs[name][None], self.rnn[i : i + 1], self.masks, deterministic=True
+            )
+            out[name] = action[0].cpu().numpy()
+            self.rnn[i] = rnn[0].cpu().numpy()
+        return out
 
 
 def _save_checkpoint(runner: _DotShotHARLRunner, ckpt_dir: Path, meta: Dict[str, Any]) -> None:
@@ -276,53 +309,9 @@ def _save_checkpoint(runner: _DotShotHARLRunner, ckpt_dir: Path, meta: Dict[str,
         json.dump(meta, file, indent=2)
 
 
-def run_harl_experiment(
-    config: dict,
-    seed: int,
-    device: str = "cuda",
-    run_dir_override: Optional[str] = None,
-    optuna_trial: object | None = None,
-) -> dict:
-    """Train one unmodified HARL algorithm on DotShot Stage 3 or 4."""
-    cfg = dict(config or {})
-    algo = _base_algo_name(cfg.get("algo", "harl_mappo"))
-    stage = int(cfg.get("stage", 3))
-    partial_obs = bool(cfg.get("partial_obs", True))
-    reward_alpha = float(cfg.get("reward_alpha", 0.5))
-    max_steps = cfg.get("max_steps", 1500)
-    max_steps = None if max_steps is None else int(max_steps)
-    total_steps = int(cfg.get("total_steps", 200_000))
-    episode_length = int(cfg.get("episode_length", 200))
-    n_threads = int(cfg.get("n_rollout_threads", 8))
-    n_eval_episodes = int(cfg.get("n_eval_episodes", 6))
-    eval_freq = int(cfg.get("eval_freq", 50_000))
-    # shortcut: HARL's ShareDummyVecEnv drops the batch axis for a single env;
-    # require two or more until that wrapper is replaced.
-    if n_threads < 2:
-        raise ValueError(
-            "HARL ShareDummyVecEnv drops the batch dimension for a single env; "
-            "use n_rollout_threads >= 2."
-        )
-
+def build_harl_args(cfg: Dict[str, Any], algo: str) -> Dict[str, Any]:
+    """Resolve the YAML config into HARL's model/algo/train argument dicts."""
     hidden_sizes = [int(size) for size in cfg.get("hidden_sizes", [128, 128])]
-    recurrent = bool(cfg.get("use_recurrent_policy", False))
-    state_type = str(cfg.get("state_type", "FP"))
-    share_param = bool(cfg.get("share_param", algo == "mappo"))
-    use_valuenorm = bool(cfg.get("use_valuenorm", True))
-    use_linear_lr_decay = bool(cfg.get("use_linear_lr_decay", False))
-    lr = float(cfg.get("lr", 5e-4))
-    critic_lr = float(cfg.get("critic_lr", 5e-4))
-    ppo_epoch = int(cfg.get("ppo_epoch", 5))
-    clip_param = float(cfg.get("clip_param", 0.2))
-    entropy_coef = float(cfg.get("entropy_coef", 0.01))
-    gamma = float(cfg.get("gamma", 0.99))
-    gae_lambda = float(cfg.get("gae_lambda", 0.95))
-
-    seed_everything(seed)
-    if device.startswith("cuda") and not torch.cuda.is_available():
-        device = "cpu"
-    torch_device = torch.device(device)
-
     model_args = {
         "hidden_sizes": hidden_sizes,
         "activation_func": "relu",
@@ -330,168 +319,177 @@ def run_harl_experiment(
         "initialization_method": "orthogonal_",
         "gain": 0.01,
         "use_naive_recurrent_policy": False,
-        "use_recurrent_policy": recurrent,
+        "use_recurrent_policy": bool(cfg.get("use_recurrent_policy", False)),
         "recurrent_n": 1,
-        "data_chunk_length": 10,
-        "lr": lr,
-        "critic_lr": critic_lr,
+        "data_chunk_length": int(cfg.get("data_chunk_length", 10)),
+        "lr": float(cfg.get("lr", 5e-4)),
+        "critic_lr": float(cfg.get("critic_lr", 5e-4)),
         "opti_eps": 1e-5,
         "weight_decay": 0.0,
         "std_x_coef": 1.0,
         "std_y_coef": 0.5,
     }
     train_args = {
-        "episode_length": episode_length,
-        "n_rollout_threads": n_threads,
-        "use_valuenorm": use_valuenorm,
-        "use_linear_lr_decay": use_linear_lr_decay,
+        "episode_length": int(cfg.get("episode_length", 200)),
+        "n_rollout_threads": int(cfg.get("n_rollout_threads", 32)),
+        "use_valuenorm": bool(cfg.get("use_valuenorm", True)),
+        "use_linear_lr_decay": bool(cfg.get("use_linear_lr_decay", True)),
         "use_proper_time_limits": True,
-        "num_env_steps": total_steps,
+        "num_env_steps": int(cfg.get("total_steps", 200_000)),
         "model_dir": None,
     }
-    algo_params = {
-        "ppo_epoch": ppo_epoch,
-        "a2c_epoch": ppo_epoch,
-        "critic_epoch": 5,
+    algo_args = {
+        "ppo_epoch": int(cfg.get("ppo_epoch", 5)),
+        "a2c_epoch": int(cfg.get("a2c_epoch", 5)),
+        "critic_epoch": int(cfg.get("critic_epoch", 5)),
         "use_clipped_value_loss": True,
-        "clip_param": clip_param,
-        "actor_num_mini_batch": 1,
-        "critic_num_mini_batch": 1,
-        "entropy_coef": entropy_coef,
+        "clip_param": float(cfg.get("clip_param", 0.2)),
+        "actor_num_mini_batch": int(cfg.get("actor_num_mini_batch", 4)),
+        "critic_num_mini_batch": int(cfg.get("critic_num_mini_batch", 4)),
+        "entropy_coef": float(cfg.get("entropy_coef", 0.01)),
         "value_loss_coef": 1.0,
         "use_max_grad_norm": True,
         "max_grad_norm": 10.0,
         "use_gae": True,
-        "gamma": gamma,
-        "gae_lambda": gae_lambda,
+        "gamma": float(cfg.get("gamma", 0.99)),
+        "gae_lambda": float(cfg.get("gae_lambda", 0.95)),
         "use_huber_loss": True,
         "use_policy_active_masks": True,
         "huber_delta": 10.0,
-        "action_aggregation": "prod",
-        "share_param": share_param,
+        "action_aggregation": str(cfg.get("action_aggregation", "mean")),
+        "share_param": bool(cfg.get("share_param", algo == "mappo")),
         "fixed_order": algo == "mappo",
-        "kl_threshold": 0.01,
+        "kl_threshold": float(cfg.get("kl_threshold", 0.01)),
         "ls_step": 10,
         "accept_ratio": 0.5,
         "backtrack_coeff": 0.8,
     }
-    algo_args = {"model": model_args, "algo": algo_params, "train": train_args}
+    return {"model": model_args, "algo": algo_args, "train": train_args}
 
-    run_dir = Path(
-        run_dir_override
-        or f"runs/m3_official/stage{stage}/{algo}/seed_{seed}"
-    )
-    resolved_config = {
-        "algo": f"harl_{algo}",
+
+def run_harl_experiment(
+    config: dict,
+    seed: int,
+    device: str = "cuda",
+    run_dir_override: Optional[str] = None,
+    optuna_trial: object | None = None,
+) -> dict:
+    """Train one HARL algorithm on DotShot Stage 3 or 4.
+
+    Periodic evaluations use the ``val`` seed split (curves, best checkpoint, pruning).
+    The final policy is scored once on ``final_eval_split`` (``test`` by default,
+    ``val`` for tuning) with ``n_test_episodes`` episodes, logged as ``<split>/...``.
+    """
+    cfg = dict(config or {})
+    algo = _base_algo_name(cfg.get("algo", "harl_mappo"))
+    stage = int(cfg.get("stage", 3))
+    state_type = str(cfg.get("state_type", "EP"))
+    env_kwargs = {
         "stage": stage,
+        "partial_obs": cfg.get("partial_obs"),
+        "reward_alpha": cfg.get("reward_alpha"),
+        "max_steps": cfg.get("max_steps"),
+        "reward_mode": cfg.get("reward_mode"),
+        "env_overrides": cfg.get("env_overrides"),
+    }
+    total_steps = int(cfg.get("total_steps", 200_000))
+    n_eval_episodes = int(cfg.get("n_eval_episodes", 16))
+    n_test_episodes = int(cfg.get("n_test_episodes", 32))
+    final_split = str(cfg.get("final_eval_split", "test"))
+    eval_freq = int(cfg.get("eval_freq", 100_000))
+    algo_args = build_harl_args(cfg, algo)
+    episode_length = algo_args["train"]["episode_length"]
+    n_threads = algo_args["train"]["n_rollout_threads"]
+    # shortcut: HARL's ShareDummyVecEnv drops the batch axis for a single env;
+    # require two or more until that wrapper is replaced.
+    if n_threads < 2:
+        raise ValueError("HARL ShareDummyVecEnv needs n_rollout_threads >= 2.")
+
+    seed_everything(seed)
+    if device.startswith("cuda") and not torch.cuda.is_available():
+        device = "cpu"
+    configure_torch(device)
+    torch_device = torch.device(device)
+
+    run_dir = Path(run_dir_override or f"runs/official/stage{stage}/{algo}/seed_{seed}")
+    resolved_config = {
+        **cfg,
+        "algo": f"harl_{algo}",
         "seed": int(seed),
         "device": str(torch_device),
-        "partial_obs": partial_obs,
-        "reward_alpha": reward_alpha,
-        "max_steps": max_steps,
-        "total_steps": total_steps,
-        "episode_length": episode_length,
-        "n_rollout_threads": n_threads,
-        "n_eval_episodes": n_eval_episodes,
-        "eval_freq": eval_freq,
-        "lr": lr,
-        "critic_lr": critic_lr,
-        "ppo_epoch": ppo_epoch,
-        "clip_param": clip_param,
-        "entropy_coef": entropy_coef,
-        "gamma": gamma,
-        "gae_lambda": gae_lambda,
-        "hidden_sizes": hidden_sizes,
-        "use_recurrent_policy": recurrent,
-        "share_param": share_param,
         "state_type": state_type,
-        "use_valuenorm": use_valuenorm,
-        "use_linear_lr_decay": use_linear_lr_decay,
+        "harl_args": algo_args,
     }
     logger = ExperimentLogger(str(run_dir), resolved_config)
 
     def make_env(rank: int) -> DotShotHARLEnv:
-        return DotShotHARLEnv(
-            stage=stage,
-            partial_obs=partial_obs,
-            reward_alpha=reward_alpha,
-            max_steps=max_steps,
-            seed=seed + rank * 1000,
-        )
+        return DotShotHARLEnv(seed=seed + rank * 1000, state_type=state_type, **env_kwargs)
 
     envs: Optional[ShareDummyVecEnv] = None
     try:
         envs = ShareDummyVecEnv([lambda rank=rank: make_env(rank) for rank in range(n_threads)])
         runner = _DotShotHARLRunner(
-            algo,
-            algo_args,
-            state_type,
-            envs,
-            num_agents=envs.n_agents,
-            device=torch_device,
+            algo, algo_args, state_type, envs, num_agents=envs.n_agents, device=torch_device
         )
+        if cfg.get("init_actor_dir"):
+            load_actor_weights(runner, Path(cfg["init_actor_dir"]))
+        if cfg.get("warm_start") in ("bc", "distill"):
+            from benchmarks.official.behaviour_cloning import bc_harl_actor, load_dataset
+
+            if algo_args["model"]["use_recurrent_policy"]:
+                raise ValueError("BC warm start supports MLP actors only.")
+            teacher = cfg.get("teacher_path") if cfg["warm_start"] == "distill" else None
+            data = load_dataset(stage, int(cfg.get("bc_episodes", 200)), env_kwargs, teacher)
+            logger.log_metrics(0, bc_harl_actor(runner, data, epochs=int(cfg.get("bc_epochs", 30)), batch_size=1024))
         meta = {
             "obs_dim": int(envs.observation_space[0].shape[0]),
             "act_dims": [int(dim) for dim in envs.action_space[0].nvec],
             "stage": stage,
             "algo": algo,
-            "recurrent": recurrent,
-            "hidden_sizes": hidden_sizes,
-            "share_param": share_param,
+            "recurrent": algo_args["model"]["use_recurrent_policy"],
+            "hidden_sizes": algo_args["model"]["hidden_sizes"],
+            "share_param": algo_args["algo"]["share_param"],
+            "state_type": state_type,
         }
-        eval_seed = seed + 100_000
+        eval_policy = HARLEvalPolicy(runner)
         best_return = -float("inf")
-        final_metrics: Dict[str, float] = {}
-        last_eval_step = 0
+        last_val: Dict[str, float] = {}
 
         def record_eval(step: int) -> None:
-            nonlocal best_return, final_metrics
-            eval_env = DotShotParallelEnv(
-                stage=stage,
-                partial_obs=partial_obs,
-                reward_alpha=reward_alpha,
-                max_steps=max_steps,
-            )
-            try:
-                metrics = runner.evaluate(eval_env, n_eval_episodes, eval_seed)
-            finally:
-                eval_env.close()
-
+            nonlocal best_return, last_val
+            metrics, _ = evaluate_marl(env_kwargs, eval_policy, n_eval_episodes, split="val")
             logger.log_metrics(step, metrics)
-            final_metrics = metrics
+            last_val = metrics
             if metrics["eval/return_mean"] > best_return:
                 best_return = metrics["eval/return_mean"]
                 _save_checkpoint(runner, run_dir / "checkpoints" / "best", meta)
-            if optuna_trial is not None:
+            if optuna_trial is not None and step > 0:
                 optuna_trial.report(metrics["eval/return_mean"], step=step)
                 if optuna_trial.should_prune():
                     import optuna
 
                     raise optuna.TrialPruned()
 
-        record_eval(0)
+        if optuna_trial is None:
+            record_eval(0)
 
+        runner.warmup()
         env_steps = 0
-        episode = 0
-        episodes = max(1, total_steps // (episode_length * n_threads))
+        update = 0
+        updates = max(1, total_steps // (episode_length * n_threads))
+        start = time.time()
+        last_eval_step = 0
         while env_steps < total_steps:
-            episode += 1
-            if use_linear_lr_decay:
-                if share_param:
-                    runner.actor[0].lr_decay(episode, episodes)
-                else:
-                    for agent_id in range(runner.num_agents):
-                        runner.actor[agent_id].lr_decay(episode, episodes)
-                runner.critic.lr_decay(episode, episodes)
+            update += 1
+            if algo_args["train"]["use_linear_lr_decay"]:
+                for actor in {id(a): a for a in runner.actor}.values():
+                    actor.lr_decay(update, updates)
+                runner.critic.lr_decay(update, updates)
 
             runner.prep_rollout()
             for step in range(episode_length):
-                values, actions, action_log_probs, rnn_states, rnn_states_critic = (
-                    runner.collect(step)
-                )
-                obs, share_obs, rewards, dones, infos, available_actions = envs.step(
-                    actions
-                )
+                values, actions, action_log_probs, rnn_states, rnn_states_critic = runner.collect(step)
+                obs, share_obs, rewards, dones, infos, available_actions = envs.step(actions)
                 runner.insert(
                     (
                         obs,
@@ -511,11 +509,10 @@ def run_harl_experiment(
             env_steps += episode_length * n_threads
             runner.compute()
             runner.prep_training()
-            if algo == "mappo":
-                OnPolicyMARunner.train(runner)
-            else:
-                OnPolicyHARunner.train(runner)
+            train_metrics = runner.train_step(algo, critic_only=update <= int(cfg.get("critic_warmup_updates", 0)))
             runner.after_update()
+            train_metrics["train/fps"] = env_steps / max(1e-9, time.time() - start)
+            logger.log_metrics(env_steps, train_metrics)
 
             if eval_freq > 0 and env_steps - last_eval_step >= eval_freq:
                 record_eval(env_steps)
@@ -525,12 +522,29 @@ def run_harl_experiment(
             record_eval(env_steps)
         _save_checkpoint(runner, run_dir / "checkpoints" / "final", meta)
 
+        prefix = "test" if final_split == "test" else "final_val"
+        final_metrics, _ = evaluate_marl(
+            env_kwargs, eval_policy, n_test_episodes, split=final_split, prefix=prefix
+        )
+        final_metrics["train/wall_time_s"] = time.time() - start
+        logger.log_metrics(env_steps, final_metrics)
         return {
             "run_dir": str(run_dir),
-            "best_return": float(best_return),
+            "best_val_return": float(best_return),
+            "last_val_metrics": last_val,
             "final_metrics": final_metrics,
+            "final_return": float(final_metrics[f"{prefix}/return_mean"]),
         }
     finally:
         if envs is not None:
             envs.close()
         logger.close()
+
+
+def load_actor_weights(runner: _DotShotHARLRunner, ckpt_dir: Path) -> None:
+    """Warm start: load ``actor_agent{i}.pt`` files (e.g. from behaviour cloning)."""
+    for agent_id, actor in enumerate(runner.actor):
+        path = ckpt_dir / f"actor_agent{agent_id}.pt"
+        if not path.exists():
+            path = ckpt_dir / "actor_agent0.pt"
+        actor.actor.load_state_dict(torch.load(path, map_location=runner.device))

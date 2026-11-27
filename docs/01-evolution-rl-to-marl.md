@@ -36,7 +36,7 @@ An agent follows a stochastic policy $\pi_\theta(a_t \mid s_t)$ parameterized by
 
 $$V^\pi(s) = \mathbb{E}_{a \sim \pi(\cdot \mid s)}\!\left[ Q^\pi(s, a) \right], \qquad Q^\pi(s, a) = \mathcal{R}(s, a) + \gamma \mathbb{E}_{s' \sim \mathcal{P}(\cdot \mid s, a)}\!\left[ V^\pi(s') \right]$$
 
-For large continuous or high-dimensional discrete spaces (such as DotShot's `129`-dim observation vector and `MultiDiscrete([3, 3, 32, 4])` action space), tabular dynamic programming is intractable. Policy-gradient methods optimize $J(\theta)$ directly using the **Policy Gradient Theorem** [@sutton1999policy]:
+For large continuous or high-dimensional discrete spaces (such as DotShot's `166`-dim observation vector and `MultiDiscrete([3, 3, 32, 4])` action space), tabular dynamic programming is intractable. Policy-gradient methods optimize $J(\theta)$ directly using the **Policy Gradient Theorem** [@sutton1999policy]:
 
 $$\nabla_\theta J(\theta) = \mathbb{E}_{s \sim \rho^\pi, \, a \sim \pi_\theta}\!\left[ \nabla_\theta \log \pi_\theta(a \mid s) \, A^\pi(s, a) \right]$$
 
@@ -107,7 +107,7 @@ Suppose in DotShot Stage 3, the Striker breaks a Fire Boss's shield with Water a
 Under Line-of-Sight occlusion around DotShot's cover blocks, Agent 1 may not see an enemy flanking the Central Core behind a pillar. Worse, under **relative overgeneralization**, a coordinated action pair (for example, Vanguard drawing boss aggro while Striker peeks for a rear shot) pays off only if both agents commit together. If early exploration makes the teammate unreliable, independent learners retreat to safe, suboptimal solo camping policies.
 
 ### 4. Combinatorial Joint Action Scaling
-Each DotShot agent selects from `MultiDiscrete([3, 3, 32, 4])`, which has $3 \times 3 \times 32 \times 4 = 1{,}152$ combinations per agent (and $2{,}304$ in v1's `64`-bin space). Across $n = 3$ agents in Stage 4, the joint action space grows exponentially:
+Each DotShot agent selects from `MultiDiscrete([3, 3, 32, 4])`, which has $3 \times 3 \times 32 \times 4 = 1{,}152$ combinations per agent. Across $n = 3$ agents in Stage 4, the joint action space grows exponentially:
 
 $$|\mathcal{A}| = \prod_{i=1}^n |\mathcal{A}_i| = 1{,}152^3 \approx 1.53 \times 10^9$$
 
@@ -119,11 +119,11 @@ No centralized joint policy $\pi(a^1, \dots, a^n \mid s)$ over flattened discret
 
 > [!WARNING]
 > **Pitfall 1: Treating Timeouts as Terminal Deaths**
-> In survival defense tasks like DotShot Stages 3 and 4, reaching `max_steps` with the Core alive sets `truncated = True` and `terminated = False`. Zeroing out $V(s_T)$ on truncation teaches agents that surviving to the final wave has zero future value, distorting GAE advantages near episode end.
+> When an episode is cut by a time limit, the last state still has future value. Treating that step as terminal (zeroing $V(s_T)$) teaches agents that surviving to the limit is worth nothing and biases GAE advantages near the end of every episode; the correct target bootstraps from $V(s_T)$. DotShot Stages 3 and 4 avoid the question by design: reaching the limit with the Core alive is a genuine terminal victory with its own reward, because HARL discards the reward of truncated steps (Chapter 3, §3.8).
 
 > [!WARNING]
 > **Pitfall 2: Flattening MultiDiscrete Actions**
-> Legacy DotShot v1 encoded `[move_x, move_y, aim_bin, weapon]` into a single integer in $[0, 2303]$. Aim bin `15` and aim bin `16` shared zero parameters in the output layer, forcing the network to relearn geometry separately for every movement and weapon combination. Factoring the policy into four independent heads ($\log \pi_i = \sum_{k=1}^4 \log \pi_i^{(k)}$) cuts output weights from $2{,}304$ logits to $3 + 3 + 32 + 4 = 42$ logits per agent.
+> Encoding `[move_x, move_y, aim_bin, weapon]` as one integer in $[0, 1151]$ gives neighbouring aim bins no shared parameters in the output layer, so the network has to relearn geometry separately for every movement and weapon combination. Factoring the policy into four independent heads ($\log \pi_i = \sum_{k=1}^4 \log \pi_i^{(k)}$) cuts the output from $1{,}152$ logits to $3 + 3 + 32 + 4 = 42$ per agent. The joint log-probability is then a sum over heads, and the PPO ratio is the product of the per-head ratios. Clipping anything else, for example that product raised to a power, silently changes the algorithm.
 
 ---
 

@@ -23,6 +23,13 @@ def seed_everything(seed: int, deterministic_cuda: bool = True) -> None:
         torch.backends.cudnn.benchmark = False
 
 
+def configure_torch(device: str, gpu_memory_fraction: float = 0.25) -> None:
+    """One CPU thread per worker; cap VRAM so three workers fit on a 12 GB RTX 3060."""
+    torch.set_num_threads(1)
+    if str(device).startswith("cuda") and torch.cuda.is_available():
+        torch.cuda.set_per_process_memory_fraction(gpu_memory_fraction)
+
+
 def get_git_info(repo_dir: str = ".") -> Dict[str, Any]:
     """Capture current Git commit SHA, branch, and dirty flag safely."""
     def _run(args):

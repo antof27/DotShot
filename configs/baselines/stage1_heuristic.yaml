@@ -1,0 +1,7 @@
+# Scripted Stage 1 baseline: heuristic policy, 96 held-out test episodes at action_repeat 8.
+stage: 1
+algo: heuristic
+total_steps: 0
+n_test_episodes: 96
+final_eval_split: test
+exp_name: stage1_heuristic
