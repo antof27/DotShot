@@ -17,7 +17,26 @@ Every agent acts in `MultiDiscrete([3, 3, 32, 4])` (horizontal move, vertical mo
 
 ## Results
 
-<!-- RESULTS: final 5-seed tables, filled in once the final runs finish. -->
+Final policies, 5 seeds each, 32 held-out test episodes per seed. Return: mean over seeds [95% bootstrap CI]. "Cloned" runs start from an actor cloned from a scripted expert and train 4M ticks; "scratch" runs train from random weights.
+
+| Stage | Policy | Return | Win rate |
+| :---: | :--- | :---: | :---: |
+| 1 | PPO, 4M ticks | 43.15 [39.85, 45.69] | 100.0% |
+| 2 | PPO from scratch, 4M ticks | 22.46 [21.35, 23.29] | 93.1% |
+| 2 | PPO from the Stage 1 policy, 4M ticks | 44.17 [42.46, 46.34] | 78.1% |
+| 3 | best cloned: HAA2C | 84.87 [82.48, 87.26] | 63.1% |
+| 3 | best scratch (16M ticks): MAPPO | 22.68 [16.91, 28.83] | 1.2% |
+| 3 | scripted expert (96 episodes) | 87.59 [83.97, 91.15] | 78.1% |
+| 4 | best cloned: MAPPO | **107.90** [106.69, 109.11] | **88.1%** |
+| 4 | best scratch (16M ticks): MAPPO | 34.32 [31.38, 37.58] | 5.6% |
+| 4 | scripted expert (96 episodes) | 100.17 [96.89, 103.34] | 75.0% |
+
+- Stage 1 is solved, and transfer from Stage 1 doubles the Stage 2 return.
+- Cloning the expert and fine-tuning with RL reaches the expert on Stage 3 and beats it on Stage 4.
+- From scratch, the learners that share parameters across agents (MAPPO, MAT) learn fastest, but 16M ticks are not enough to defend the Core reliably.
+- On the heterogeneous Stage 4, the shared-actor MAPPO beats HAPPO and HATRPO, the methods designed for heterogeneous teams.
+
+Every learner, tables, learning curves, behaviour analysis and screenshots: [experiment log](docs/04-experiments-log.md) and [report](docs/paper/dotshot_marl_report.pdf).
 
 ## Learners
 
@@ -67,6 +86,10 @@ PyTorch with CUDA is only needed for MAT; the simulator, SB3 and HARL run faster
 
 # Train a tuned configuration on 5 seeds (resumable)
 .\.venv\Scripts\python.exe scripts\run_jobs.py --config configs\official\s3_harl_mappo_bc.yaml --seeds 0-4 --out runs\final\stage3 --workers 5
+
+# Replay a trained run on a held-out test episode, or record it
+.\.venv\Scripts\python.exe scripts\enjoy.py --run runsinal\stage4\s4_harl_mappo_bc\seed_0
+.\.venv\Scripts\python.exe scripts\enjoy.py --run runsinal\stage4\s4_harl_mappo_bc\seed_0 --record stage4.mp4
 
 # Watch training curves and behaviour flags
 .\.venv\Scripts\python.exe scripts\monitor_runs.py runs\final\stage3
