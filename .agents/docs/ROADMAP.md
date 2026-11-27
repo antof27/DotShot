@@ -2,7 +2,7 @@
 
 ## Current status (2026-11-27)
 
-Branch `fix/marl-performance`. All experiments of the current round are finished and documented.
+Released on `main` as v2.2. All experiments of the current round are finished and documented.
 
 | Area | State |
 | :--- | :--- |
